@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0d1117">
+<title>Home_Air · live</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1"></script>
+<style>
+  :root{
+    --bg:#0d1117;--card:#161b22;--card2:#11161d;--bd:#27313f;--fg:#e6edf3;
+    --muted:#8b98a9;--good:#3fb950;--cold:#4a86e8;--warn:#d29922;--hot:#f85149;
+    --accent:#58a6ff;--purple:#bc8cff;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    padding:max(14px,env(safe-area-inset-top)) 14px 40px}
+  .wrap{max-width:1180px;margin:0 auto}
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  h1{font-size:18px;margin:0;font-weight:650}
+  .sub{color:var(--muted);font-size:12px;margin-top:3px}
+  .live{font-size:11px;color:var(--good);display:inline-flex;align-items:center;gap:5px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--good);box-shadow:0 0 0 0 rgba(63,185,80,.5);
+    animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(63,185,80,.45)}70%{box-shadow:0 0 0 7px rgba(63,185,80,0)}100%{box-shadow:0 0 0 0 rgba(63,185,80,0)}}
+  .warnbar{background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.3);
+    color:var(--warn);border-radius:8px;padding:9px 12px;font-size:12px;margin:12px 0}
+  .grid{display:grid;gap:10px;margin:16px 0}
+  .cards{grid-template-columns:repeat(auto-fill,minmax(148px,1fr))}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;min-width:0}
+  .lbl{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+  .val{font-size:26px;font-weight:680;margin-top:4px;line-height:1.1;white-space:nowrap}
+  .unit{font-size:13px;color:var(--muted);font-weight:400;margin-left:2px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10.5px;margin-top:7px;font-weight:600}
+  .ok{background:rgba(63,185,80,.15);color:var(--good)} .hot{background:rgba(248,81,73,.15);color:var(--hot)}
+  .cold{background:rgba(74,134,232,.16);color:var(--cold)} .neutral{background:rgba(139,152,169,.14);color:var(--muted)}
+  .muted{color:var(--muted)} .mt{margin-top:7px;font-size:11.5px}
+  h2{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:24px 0 8px;font-weight:650}
+  .panel{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px}
+  .chartbox{position:relative;width:100%}
+  canvas{max-width:100%}
+  .ranges{display:inline-flex;gap:4px;margin-bottom:10px;background:var(--card2);border:1px solid var(--bd);
+    border-radius:9px;padding:3px}
+  .ranges button{background:none;border:0;color:var(--muted);font:inherit;font-size:12px;padding:5px 11px;
+    border-radius:7px;cursor:pointer}
+  .ranges button.active{background:#21303f;color:var(--fg)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:right;padding:7px 8px;border-bottom:1px solid var(--bd);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+  tr:last-child td{border-bottom:0}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .statrow{display:flex;flex-wrap:wrap;gap:22px;align-items:baseline}
+  .stat .big{font-size:22px;font-weight:680}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+  .chip{padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:600}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .acts{font-size:12px;max-height:340px;overflow:auto}
+  .acts .row{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--bd)}
+  .acts .t{color:var(--muted);flex:0 0 92px}
+  .k{color:var(--accent)} .kerr{color:var(--hot)} .kwarn{color:var(--warn)}
+  .foot{color:var(--muted);font-size:11.5px;margin-top:22px;line-height:1.6}
+  @media(max-width:640px){
+    .val{font-size:23px} h1{font-size:17px}
+    .cards{grid-template-columns:repeat(2,1fr)}
+    .two{grid-template-columns:1fr}
+    body{padding-left:11px;padding-right:11px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>🏠 Home_Air</h1>
+      <div class="sub">Ethan's room · auto-cooled by the office Midea</div>
+    </div>
+    <div style="text-align:right">
+      <div class="live"><span class="dot"></span><span id="livelbl">live</span></div>
+      <div class="sub" id="updated">loading…</div>
+    </div>
+  </header>
+  <div id="stalewarn" class="warnbar" style="display:none"></div>
+
+  <div class="grid cards" id="cards"></div>
+
+  <h2>Temperature & comfort band</h2>
+  <div class="panel">
+    <div class="ranges" id="ranges">
+      <button data-h="6">6h</button><button data-h="24" class="active">24h</button>
+      <button data-h="72">3d</button><button data-h="168">7d</button>
+    </div>
+    <div class="chartbox"><canvas id="tempChart" height="118"></canvas></div>
+  </div>
+
+  <h2>Setpoint commanded & cooling state</h2>
+  <div class="panel"><div class="chartbox"><canvas id="spChart" height="92"></canvas></div></div>
+
+  <h2>Smart-cooling analytics</h2>
+  <div class="panel scroll"><table id="periodTbl"></table></div>
+
+  <div class="two" style="margin-top:10px">
+    <div class="panel">
+      <div class="lbl">Energy & runtime <span class="muted">(window)</span></div>
+      <div class="statrow" style="margin-top:10px" id="energyRow"></div>
+    </div>
+    <div class="panel">
+      <div class="lbl">Free-cool & coupling</div>
+      <div class="statrow" style="margin-top:10px" id="modeRow"></div>
+    </div>
+  </div>
+
+  <h2>70°F-by-9pm goal — recent nights</h2>
+  <div class="panel"><div id="goalSummary" class="muted">—</div><div class="chips" id="goalChips"></div></div>
+
+  <h2>Daily summary</h2>
+  <div class="panel scroll"><table id="dailyTbl"></table></div>
+
+  <div class="two" style="margin-top:10px">
+    <div class="panel">
+      <div class="lbl">What drives Ethan's room <span class="muted">(correlation)</span></div>
+      <div class="statrow" style="margin-top:10px" id="corrRow"></div>
+      <div class="mt muted" id="corrNote"></div>
+    </div>
+    <div class="panel">
+      <div class="lbl">Recent activity</div>
+      <div class="acts" id="acts" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    Updates every ~15 min from GitHub Actions (cloud relay). Page auto-refreshes each minute.
+    Energy is estimated (no power meter): cool 1.1kW · turbo 1.5kW · fan 0.12kW · idle 0.05kW @ $0.15/kWh.
+  </div>
+</div>
+
+<script>
+const KW={cool:1.1,turbo:1.5,fan:0.12,idle:0.05}, PRICE=0.15;
+const F=v=>(v==null||v===""||isNaN(v))?"—":(Math.round(v*10)/10);
+const I=v=>(v==null||isNaN(v))?"—":Math.round(v);
+const bust=()=>"?t="+Math.floor(Date.now()/30000);
+const num=v=>{const x=parseFloat(v);return isNaN(x)?null:x;};
+let HIST=[], STATUS={}, RANGE=24;
+
+function rowKW(r){
+  if(r.turbo) return KW.turbo;
+  if(r.mode==="fan" && r.ac_running) return KW.fan;
+  if(r.ac_running) return KW.cool;
+  return KW.idle;
+}
+function period(h){ return (h>=21||h<9)?"night":(h>=17?"evening":(h>=9?"day":"night")); }
+function localHour(ts){const d=new Date(ts*1000);return d.getHours()+d.getMinutes()/60;}
+function dayKey(ts){const d=new Date(ts*1000);return d.toLocaleDateString('en-CA');}
+function pearson(xs,ys){
+  const n=xs.length; if(n<3) return null;
+  let sx=0,sy=0; for(let i=0;i<n;i++){sx+=xs[i];sy+=ys[i];}
+  const mx=sx/n,my=sy/n; let a=0,bx=0,by=0;
+  for(let i=0;i<n;i++){const dx=xs[i]-mx,dy=ys[i]-my;a+=dx*dy;bx+=dx*dx;by+=dy*dy;}
+  if(bx===0||by===0) return null;
+  return a/Math.sqrt(bx*by);
+}
+
+async function load(){
+  try{ STATUS=await(await fetch("status.json"+bust())).json(); }catch(e){}
+  try{
+    const txt=await(await fetch("history.csv"+bust())).text();
+    const lines=txt.trim().split(/\r?\n/), head=lines[0].split(",");
+    const ix=k=>head.indexOf(k);
+    HIST=lines.slice(1).map(l=>{const c=l.split(","); return {
+      ts:+c[ix("ts")], t_ethan:num(c[ix("t_ethan")]), t_office:num(c[ix("t_office")]),
+      outdoor:num(c[ix("outdoor")]), humidity:num(c[ix("humidity")]),
+      target:num(c[ix("target")]), low:num(c[ix("band_low")]), high:num(c[ix("band_high")]),
+      setpoint:num(c[ix("setpoint")]), mode:c[ix("mode")], fan:c[ix("fan")],
+      turbo:+c[ix("turbo")]||0, ac_running:+c[ix("ac_running")]||0, applied:+c[ix("applied")]||0,
+      indoor_hum:num(c[ix("indoor_hum")]), central_cool:num(c[ix("central_cool")]),
+      t_living:num(c[ix("t_living")]), t_heather:num(c[ix("t_heather")]),
+      error:(ix("error")>=0?c[ix("error")]:"")
+    };}).filter(r=>r.ts && r.t_ethan!=null);
+  }catch(e){}
+  render();
+}
+
+function renderCards(){
+  const s=STATUS, te=s.t_ethan, lo=s.band&&s.band[0], hi=s.band&&s.band[1];
+  const d=new Date((s.updated||0)*1000), ageMin=(Date.now()-d.getTime())/60000;
+  document.getElementById("updated").textContent="updated "+(s.updated?d.toLocaleString():"—");
+  const lv=document.getElementById("livelbl"), dot=document.querySelector(".dot");
+  const sw=document.getElementById("stalewarn");
+  if(ageMin>40){sw.style.display="block";sw.textContent=`⚠ Last cloud update ${I(ageMin)} min ago — loop may be paused/delayed.`;
+    lv.textContent="stale";dot.style.background="var(--warn)";}
+  else{sw.style.display="none";lv.textContent="live";dot.style.background="var(--good)";}
+  const pill=te==null?"":(te>hi?`<span class="pill hot">above band</span>`:
+    te<lo?`<span class="pill cold">below band</span>`:`<span class="pill ok">in band</span>`);
+  const isFan=s.mode!=="cool";
+  const acHead=isFan?(s.mode==="fan"?"Fan":"Idle"):F(s.setpoint);
+  const acSub=s.mode==="fan"?"FREE-COOL · compressor off":s.mode==="off"?"compressor off":(s.mode||"");
+  const gap=(s.t_ethan!=null&&s.t_office!=null)?`<span class="muted mt">${F(s.t_ethan-s.t_office)}° below Ethan</span>`:"";
+  // 24h in-band + range
+  const cut=(s.updated||Date.now()/1000)-24*3600;
+  const w=HIST.filter(r=>r.ts>=cut&&r.t_ethan!=null);
+  let ib="—",rng="—",acon="—";
+  if(w.length){
+    const inb=w.filter(r=>r.low!=null&&r.t_ethan>=r.low&&r.t_ethan<=r.high).length;
+    ib=Math.round(100*inb/w.length)+"%";
+    const ts=w.map(r=>r.t_ethan); rng=`${F(Math.min(...ts))}–${F(Math.max(...ts))}`;
+    acon=Math.round(100*w.filter(r=>r.ac_running).length/w.length)+"%";
+  }
+  const card=(l,v,u,e)=>`<div class="card"><div class="lbl">${l}</div><div class="val">${v}<span class="unit">${u||""}</span></div>${e||""}</div>`;
+  document.getElementById("cards").innerHTML=
+    card("Ethan's room",F(te),"°F",pill)+
+    card("Target",F(s.target),"°F",`<span class="muted mt">band ${F(lo)}–${F(hi)}</span>`)+
+    card("Office (AC)",F(s.t_office),"°F",gap)+
+    card("AC "+(isFan?"mode":"setpoint"),acHead,isFan?"":"°F",
+      `<span class="${s.mode==='fan'?'pill ok':'neutral pill'}">${acSub} · ${s.fan||"?"}${s.turbo?' · <b style="color:var(--warn)">BOOST</b>':''}</span>`)+
+    card("Outdoor",F(s.outdoor),"°F",s.humidity!=null?`<span class="muted mt">${I(s.humidity)}% RH</span>`:"")+
+    card("Indoor RH",I(s.indoor_hum),"%",s.central_cool?`<span class="pill cold">central AC on</span>`:`<span class="muted mt">central AC off</span>`)+
+    card("In band (24h)",ib,"",`<span class="muted mt">AC on ${acon}</span>`)+
+    card("Range (24h)",rng,"°F",`<span class="muted mt">${w.length} samples</span>`);
+}
+
+let tempChart, spChart;
+function renderCharts(){
+  const cut=(Date.now()/1000)-RANGE*3600;
+  const H=HIST.filter(r=>r.ts>=cut);
+  const xy=(k)=>H.map(r=>({x:r.ts*1000,y:r[k]}));
+  const axis=t=>({type:"time",time:{unit:RANGE<=24?"hour":"day"},grid:{color:"#222b36"},
+    ticks:{color:"#8b98a9",maxTicksLimit:8}});
+  const yax=t=>({title:{display:true,text:t,color:"#8b98a9"},grid:{color:"#222b36"},ticks:{color:"#8b98a9"}});
+  const opt=t=>({responsive:true,maintainAspectRatio:true,animation:false,
+    interaction:{mode:"index",intersect:false},
+    scales:{x:axis(),y:yax(t)},plugins:{legend:{labels:{color:"#e6edf3",boxWidth:11,font:{size:11}}},
+      tooltip:{callbacks:{title:i=>new Date(i[0].parsed.x).toLocaleString()}}}});
+  const tds=[
+    {label:"Ethan",data:xy("t_ethan"),borderColor:"#58a6ff",borderWidth:2,pointRadius:0,tension:.25},
+    {label:"Office",data:xy("t_office"),borderColor:"#2ea043",borderWidth:1,pointRadius:0,tension:.25},
+    {label:"Outdoor",data:xy("outdoor"),borderColor:"#d29922",borderWidth:1,pointRadius:0,tension:.25,borderDash:[1,0]},
+    {label:"Band high",data:xy("high"),borderColor:"rgba(139,152,169,.35)",borderWidth:1,pointRadius:0,fill:"+1",backgroundColor:"rgba(63,185,80,.06)"},
+    {label:"Band low",data:xy("low"),borderColor:"rgba(139,152,169,.35)",borderWidth:1,pointRadius:0},
+    {label:"Target",data:xy("target"),borderColor:"#3fb950",borderWidth:1.5,borderDash:[5,4],pointRadius:0},
+  ];
+  if(tempChart)tempChart.destroy();
+  tempChart=new Chart(document.getElementById("tempChart"),{type:"line",data:{datasets:tds},options:opt("°F")});
+  const sds=[
+    {label:"Setpoint",data:xy("setpoint"),borderColor:"#bc8cff",borderWidth:2,pointRadius:0,stepped:true},
+    {label:"AC running",data:H.map(r=>({x:r.ts*1000,y:r.ac_running?1:0})),borderColor:"#3fb950",
+      backgroundColor:"rgba(63,185,80,.13)",borderWidth:1,pointRadius:0,fill:true,stepped:true,yAxisID:"y2"},
+  ];
+  const so=opt("°F");
+  so.scales.y.suggestedMin=58; so.scales.y.suggestedMax=73;   // setpoint operating range
+  so.scales.y2={position:"right",min:0,max:1,grid:{display:false},
+    ticks:{color:"#8b98a9",callback:v=>v?"on":"off",stepSize:1}};
+  if(spChart)spChart.destroy();
+  spChart=new Chart(document.getElementById("spChart"),{type:"line",data:{datasets:sds},options:so});
+}
+
+function renderAnalytics(){
+  const H=HIST; if(!H.length){return;}
+  // dt per row
+  for(let i=0;i<H.length;i++){H[i]._dt=(i+1<H.length)?Math.min(900,Math.max(0,H[i+1].ts-H[i].ts)):120;}
+  // periods
+  const P={day:[],evening:[],night:[]};
+  H.forEach(r=>P[period(localHour(r.ts))].push(r));
+  const inb=r=>r.low!=null&&r.t_ethan>=r.low&&r.t_ethan<=r.high;
+  const pct=(a,f)=>a.length?Math.round(100*a.filter(f).length/a.length):0;
+  const mae=a=>a.length?(a.reduce((s,r)=>s+Math.abs(r.t_ethan-r.target),0)/a.length):0;
+  const avg=a=>a.length?(a.reduce((s,r)=>s+r.t_ethan,0)/a.length):0;
+  const labels={day:"Day 9a–5p",evening:"Evening 5–9p",night:"Night 9p–9a"};
+  let rows="<tr><th>Period</th><th>In band</th><th>Avg</th><th>MAE</th><th>AC on</th><th>Boost</th><th>Central</th></tr>";
+  ["day","evening","night"].forEach(k=>{const a=P[k]; if(!a.length)return;
+    rows+=`<tr><td>${labels[k]}</td><td>${pct(a,inb)}%</td><td>${F(avg(a))}°</td><td>${F(mae(a))}°</td>
+      <td>${pct(a,r=>r.ac_running)}%</td><td>${pct(a,r=>r.turbo)}%</td>
+      <td>${pct(a,r=>r.central_cool)}%</td></tr>`;});
+  document.getElementById("periodTbl").innerHTML=rows;
+
+  // energy + modes
+  let kwh=0,fanH=0,coolH=0,offH=0,acH=0;
+  H.forEach(r=>{const h=r._dt/3600;kwh+=rowKW(r)*h;
+    if(r.mode==="fan"&&r.ac_running)fanH+=h;else if(r.ac_running)coolH+=h;else offH+=h;
+    if(r.ac_running)acH+=h;});
+  const saved=fanH*(KW.cool-KW.fan), cost=kwh*PRICE;
+  document.getElementById("energyRow").innerHTML=
+    `<div class="stat"><div class="big">${F(kwh)}<span class="unit">kWh</span></div><div class="muted">energy</div></div>
+     <div class="stat"><div class="big">$${F(cost)}</div><div class="muted">est. cost</div></div>
+     <div class="stat"><div class="big">${F(acH)}<span class="unit">h</span></div><div class="muted">AC runtime</div></div>`;
+  // office gap
+  const gaps=H.filter(r=>r.t_office!=null).map(r=>r.t_ethan-r.t_office);
+  const gap=gaps.length?gaps.reduce((a,b)=>a+b,0)/gaps.length:null;
+  document.getElementById("modeRow").innerHTML=
+    `<div class="stat"><div class="big" style="color:var(--good)">${F(fanH)}<span class="unit">h</span></div><div class="muted">free-cool (fan)</div></div>
+     <div class="stat"><div class="big" style="color:var(--good)">$${F(saved)}</div><div class="muted">saved vs compressor</div></div>
+     <div class="stat"><div class="big">${F(gap)}<span class="unit">°F</span></div><div class="muted">office→Ethan gap</div></div>`;
+
+  // 9pm goal nights (night band 69-71 by config; use band cols if night)
+  const byDay={};
+  H.forEach(r=>{(byDay[dayKey(r.ts)]=byDay[dayKey(r.ts)]||[]).push(r);});
+  const nights=[];
+  Object.keys(byDay).sort().forEach(day=>{
+    const near=byDay[day].map(r=>({r,d:Math.abs(localHour(r.ts)-21)})).sort((a,b)=>a.d-b.d)[0];
+    if(near&&near.d<=1){const t=near.r.t_ethan; nights.push({day,t,met:t>=69&&t<=71});}
+  });
+  const last=nights.slice(-14), hit=last.filter(n=>n.met).length;
+  document.getElementById("goalSummary").innerHTML=`69–71°F by 9pm — last nights (<b>${hit}/${last.length}</b> met)`;
+  document.getElementById("goalChips").innerHTML=last.map(n=>
+    `<span class="chip ${n.met?'ok':'hot'}" title="${n.day}">${n.day.slice(5)}: ${F(n.t)}°</span>`).join("")||'<span class="muted">no nights yet</span>';
+
+  // daily table
+  let dr="<tr><th>Day</th><th>In band</th><th>Range</th><th>9pm</th><th>AC hrs</th><th>kWh</th><th>Cost</th></tr>";
+  Object.keys(byDay).sort().slice(-14).reverse().forEach(day=>{
+    const a=byDay[day]; const inbp=pct(a,inb);
+    const ts=a.map(r=>r.t_ethan); let dk=0,dac=0; a.forEach(r=>{dk+=rowKW(r)*r._dt/3600; if(r.ac_running)dac+=r._dt/3600;});
+    const n=nights.find(x=>x.day===day);
+    dr+=`<tr><td>${day.slice(5)}</td><td>${inbp}%</td><td>${F(Math.min(...ts))}–${F(Math.max(...ts))}°</td>
+      <td>${n?F(n.t)+"°":"—"}</td><td>${F(dac)}h</td><td>${F(dk)}</td><td>$${F(dk*PRICE)}</td></tr>`;
+  });
+  document.getElementById("dailyTbl").innerHTML=dr;
+
+  // correlations
+  const valid=H.filter(r=>r.outdoor!=null&&r.t_office!=null);
+  const co=pearson(valid.map(r=>r.t_ethan),valid.map(r=>r.outdoor));
+  const cf=pearson(valid.map(r=>r.t_ethan),valid.map(r=>r.t_office));
+  document.getElementById("corrRow").innerHTML=
+    `<div class="stat"><div class="big">${co==null?"—":co.toFixed(2)}</div><div class="muted">outdoor</div></div>
+     <div class="stat"><div class="big">${cf==null?"—":cf.toFixed(2)}</div><div class="muted">office temp</div></div>`;
+  document.getElementById("corrNote").textContent=
+    (co!=null&&co>0.5)?"Outdoor dominates Ethan's room; office couples weakly — a doorway fan would help most.":"";
+
+  // recent activity (mode/setpoint changes + errors), newest first
+  const acts=[]; let prev=null;
+  for(let i=H.length-1;i>=0&&acts.length<40;i--){const r=H[i];
+    const key=`${r.setpoint}|${r.mode}|${r.fan}|${r.turbo}`;
+    if(r.error){acts.push({ts:r.ts,k:"error",txt:r.error.slice(0,60)});}
+    else if(key!==prev){acts.push({ts:r.ts,k:"setpoint",
+      txt:`sp=${F(r.setpoint)} ${r.mode} fan=${r.fan}${r.turbo?' +turbo':''} ethan=${F(r.t_ethan)}°`});}
+    prev=key;
+  }
+  document.getElementById("acts").innerHTML=acts.map(a=>{
+    const t=new Date(a.ts*1000).toLocaleString([], {month:"numeric",day:"numeric",hour:"numeric",minute:"2-digit"});
+    const cl=a.k==="error"?"kerr":a.k==="warn"?"kwarn":"k";
+    return `<div class="row"><span class="t">${t}</span><span class="${cl}">${a.txt}</span></div>`;
+  }).join("")||'<span class="muted">no activity</span>';
+}
+
+function render(){ renderCards(); renderCharts(); renderAnalytics(); }
+document.getElementById("ranges").addEventListener("click",e=>{
+  if(e.target.tagName!=="BUTTON")return;
+  document.querySelectorAll("#ranges button").forEach(b=>b.classList.remove("active"));
+  e.target.classList.add("active"); RANGE=+e.target.dataset.h; renderCharts();
+});
+load(); setInterval(load,60000);
+</script>
+</body>
+</html>

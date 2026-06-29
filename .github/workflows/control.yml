@@ -1,0 +1,61 @@
+name: Home_Air control loop
+
+# Runs the cooling controller 24/7 from GitHub's cloud (no home device needed).
+# Commands the Midea via the MSmartHome cloud relay; reads ecobee + weather.
+# GitHub cron is best-effort and can be delayed several minutes — fine for HVAC.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # every 15 min (UTC); TZ below makes the schedule local
+  workflow_dispatch: {}        # allow manual runs
+
+# Avoid overlapping runs (one cloud session at a time -> respects login cap)
+concurrency:
+  group: home-air-control
+  cancel-in-progress: false
+
+permissions:
+  contents: write              # commit updated state/ back to the repo
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    env:
+      TZ: America/New_York     # so the 10pm-9am / day schedule is house-local
+      HA_TARGET_F: "70"
+      ECOBEE_ACCOUNT: ${{ secrets.ECOBEE_ACCOUNT }}
+      ECOBEE_PASSWORD: ${{ secrets.ECOBEE_PASSWORD }}
+      ECOBEE_THERMOSTAT_ID: ${{ secrets.ECOBEE_THERMOSTAT_ID }}
+      MIDEA_ACCOUNT: ${{ secrets.MIDEA_ACCOUNT }}
+      MIDEA_PASSWORD: ${{ secrets.MIDEA_PASSWORD }}
+      MIDEA_ID: ${{ secrets.MIDEA_ID }}
+      MIDEA_TRANSPORT: cloud
+      HA_LAT: ${{ secrets.HA_LAT }}        # house coords for Open-Meteo weather
+      HA_LON: ${{ secrets.HA_LON }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run one control cycle
+        run: python scripts/cloud_cycle.py
+
+      - name: Publish state to docs (GitHub Pages dashboard)
+        run: |
+          mkdir -p docs
+          cp -f state/status.json docs/status.json 2>/dev/null || true
+          cp -f state/history.csv docs/history.csv 2>/dev/null || true
+
+      - name: Commit state
+        run: |
+          git config user.name "home-air-bot"
+          git config user.email "home-air-bot@users.noreply.github.com"
+          git add state/ docs/status.json docs/history.csv
+          git diff --quiet --cached || git commit -m "state: control cycle $(date -u +%FT%TZ)"
+          git push

@@ -1,0 +1,6 @@
+requests>=2.28
+numpy>=1.23
+msmart-ng>=2024.1            # local (LAN) Midea control
+midea-beautiful-air>=0.10.5  # MSmartHome CLOUD relay control (WAN, GitHub Actions)
+pycryptodome>=3.10           # AES for cloud crypto
+pytest>=7.0                  # tests only

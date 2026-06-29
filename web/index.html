@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home_Air — Ethan's Room</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+  :root{--bg:#0f1419;--card:#1a2230;--ink:#e6edf3;--muted:#8b98a9;
+        --accent:#4fb6ff;--good:#3fb950;--warn:#d29922;--bad:#f85149;--line:#27313f}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+  header{padding:18px 24px;border-bottom:1px solid var(--line);
+         display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  h1{font-size:19px;margin:0;font-weight:650}
+  .sub{color:var(--muted);font-size:13px}
+  .wrap{max-width:1100px;margin:0 auto;padding:20px 24px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .card .lbl{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  .card .val{font-size:28px;font-weight:680;margin-top:6px}
+  .card .unit{font-size:15px;color:var(--muted);font-weight:500}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600}
+  .ok{background:rgba(63,185,80,.15);color:var(--good)}
+  .hot{background:rgba(248,81,73,.15);color:var(--bad)}
+  .cold{background:rgba(79,182,255,.15);color:var(--accent)}
+  .off{background:rgba(139,152,169,.15);color:var(--muted)}
+  section{margin-top:26px}
+  section h2{font-size:14px;color:var(--muted);text-transform:uppercase;
+             letter-spacing:.05em;margin:0 0 12px}
+  .chartbox{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .controls{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .controls button{background:var(--card);color:var(--muted);border:1px solid var(--line);
+        border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px}
+  .controls button.active{color:var(--ink);border-color:var(--accent)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600}
+  td.k{color:var(--accent)}
+  .muted{color:var(--muted)}
+  .err{color:var(--bad)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🏠 Home_Air</h1>
+  <span class="sub">Ethan's room · auto-cooled by the office Midea</span>
+  <span class="sub" id="updated" style="margin-left:auto"></span>
+</header>
+
+<div class="wrap">
+  <div id="banner"></div>
+  <div class="cards" id="cards"></div>
+
+  <section>
+    <h2>Temperature &amp; target band</h2>
+    <div class="controls" id="ranges">
+      <button data-h="6">6h</button>
+      <button data-h="24" class="active">24h</button>
+      <button data-h="72">3d</button>
+      <button data-h="168">7d</button>
+    </div>
+    <div class="chartbox"><canvas id="tempChart" height="120"></canvas></div>
+  </section>
+
+  <section>
+    <h2>Setpoint commanded to the AC &amp; cooling state</h2>
+    <div class="chartbox"><canvas id="spChart" height="90"></canvas></div>
+  </section>
+
+  <section>
+    <h2>Smart-cooling analytics (7 days)</h2>
+    <div id="analytics"></div>
+  </section>
+
+  <section>
+    <h2>Learned model</h2>
+    <div class="chartbox" id="params"></div>
+  </section>
+
+  <section>
+    <h2>Recent actions</h2>
+    <div class="chartbox"><table id="actions"><tbody></tbody></table></div>
+  </section>
+</div>
+
+<script>
+const F = n => (n==null? "—" : (Math.round(n*10)/10));
+const fmtTime = ts => new Date(ts*1000).toLocaleString();
+let hours = 24, tempChart, spChart;
+
+function card(lbl, val, unit="", pill=null){
+  return `<div class="card"><div class="lbl">${lbl}</div>
+    <div class="val">${val}<span class="unit">${unit}</span></div>
+    ${pill? `<div style="margin-top:8px">${pill}</div>`:""}</div>`;
+}
+
+async function loadStatus(){
+  const s = await (await fetch("/api/status")).json();
+  document.getElementById("updated").textContent =
+    s.has_data ? "updated "+fmtTime(s.now) : "";
+  const b = document.getElementById("banner");
+  if(!s.has_data){
+    b.innerHTML = `<div class="card"><b>No data yet.</b> Start the service
+      (<code>python scripts/run_service.py</code>) or seed the simulator
+      (<code>python scripts/run_dashboard.py --demo</code>).</div>`;
+    document.getElementById("cards").innerHTML = "";
+    return;
+  }
+  const c = s.current;
+  let state, pill;
+  if(c.ac_running===0||c.ac_running===false){ state="Idle"; pill=`<span class="pill off">AC off</span>`; }
+  else if(c.in_band){ state="In band"; pill=`<span class="pill ok">in band</span>`; }
+  else if(c.t_ethan> c.band_high){ state="Too warm"; pill=`<span class="pill hot">above band</span>`; }
+  else { state="Cooling / cool"; pill=`<span class="pill cold">below band</span>`; }
+
+  const age = c.age_s>180 ? `<span class="err">stale (${Math.round(c.age_s/60)}m old)</span>`
+                          : `${c.age_s}s ago`;
+  document.getElementById("cards").innerHTML =
+    card("Ethan's room", F(c.t_ethan), "°F", pill) +
+    card("Target", F(c.target), "°F",
+         `<span class="muted">band ${F(c.band_low)}–${F(c.band_high)}</span>`) +
+    card("Office (AC room)", c.t_office!=null?F(c.t_office):"—", "°F",
+         c.t_office!=null&&c.t_ethan!=null?`<span class="muted">${F(c.t_ethan-c.t_office)}° below Ethan</span>`:"") +
+    // only COOL mode sends a setpoint; fan (free-cool) and off don't, so showing
+    // c.setpoint there is stale/misleading -> show the mode instead.
+    (function(){const noSp=c.mode!=='cool';
+      const head=noSp?(c.mode==='fan'?'Fan':'Idle'):F(c.setpoint);
+      const sub=c.mode==='fan'?'FREE-COOL · compressor off'
+               :c.mode==='off'?'compressor off':(c.mode||'');
+      return card(noSp?"AC mode":"AC setpoint", head, noSp?"":"°F",
+         `<span class="${c.mode==='fan'?'pill ok':'muted'}">${sub} · fan ${c.fan||"?"}${c.turbo?' · <b style="color:var(--warn)">BOOST</b>':''}</span>`);})() +
+    card("Outdoor", F(c.outdoor), "°F",
+         c.humidity!=null?`<span class="muted">${F(c.humidity)}% RH</span>`:"") +
+    card("Indoor RH", c.indoor_hum!=null?F(c.indoor_hum):"—", "%",
+         c.central_cool?`<span class="pill cold">central AC on</span>`:`<span class="muted">central AC off</span>`) +
+    (s.summary_24h.n? card("In band (24h)", s.summary_24h.in_band_pct, "%",
+         `<span class="muted">AC on ${s.summary_24h.ac_on_pct??"—"}%</span>`):"") +
+    (s.summary_24h.n? card("Range (24h)",
+         F(s.summary_24h.min_ethan)+"–"+F(s.summary_24h.max_ethan), "°F",
+         `<span class="muted">last reading ${age}</span>`):"");
+
+  // params
+  const p = s.params;
+  document.getElementById("params").innerHTML = p
+    ? `<table><tbody>${Object.entries(p).map(([k,v])=>
+        `<tr><td class="k">${k}</td><td>${typeof v==="number"?(Math.round(v*1000)/1000):v}</td></tr>`).join("")}</tbody></table>`
+    : `<span class="muted">Using built-in defaults (run <code>python -m hvac.learn</code> after collecting data).</span>`;
+}
+
+async function loadActions(){
+  const a = await (await fetch("/api/actions?limit=40")).json();
+  document.querySelector("#actions tbody").innerHTML =
+    `<tr><th>When</th><th>Kind</th><th>Detail</th></tr>` +
+    (a.actions.length? a.actions.map(r=>
+      `<tr><td class="muted">${fmtTime(r.ts)}</td><td class="k">${r.kind}</td>
+       <td>${(r.detail||"").slice(0,140)}</td></tr>`).join("")
+     : `<tr><td colspan="3" class="muted">No actions logged yet.</td></tr>`);
+}
+
+async function loadHistory(){
+  const h = await (await fetch("/api/history?hours="+hours)).json();
+  const P = h.points;
+  const t = P.map(p=>p.ts*1000);
+  const mk = (arr,key)=>P.map(p=>({x:p.ts*1000,y:p[key]}));
+
+  const dsTemp = [
+    {label:"Ethan", data:mk(P,"t_ethan"), borderColor:"#4fb6ff", backgroundColor:"#4fb6ff",
+     pointRadius:0, borderWidth:2, tension:.25},
+    {label:"Office (AC)", data:mk(P,"t_office"), borderColor:"#56d4c4",
+     pointRadius:0, borderWidth:1.5, tension:.25},
+    {label:"Outdoor", data:mk(P,"outdoor"), borderColor:"#d29922",
+     pointRadius:0, borderWidth:1.3, tension:.25, borderDash:[4,3]},
+    {label:"Band high", data:mk(P,"band_high"), borderColor:"rgba(63,185,80,.5)",
+     pointRadius:0, borderWidth:1, fill:"+1", backgroundColor:"rgba(63,185,80,.08)"},
+    {label:"Band low", data:mk(P,"band_low"), borderColor:"rgba(63,185,80,.5)",
+     pointRadius:0, borderWidth:1, fill:false},
+    {label:"Target", data:mk(P,"target"), borderColor:"#3fb950",
+     pointRadius:0, borderWidth:1.5, borderDash:[2,2]},
+    {label:"Living rm", data:mk(P,"t_living"), borderColor:"rgba(188,140,255,.45)",
+     pointRadius:0, borderWidth:1, tension:.25, hidden:true},
+    {label:"Heather rm", data:mk(P,"t_heather"), borderColor:"rgba(255,140,180,.45)",
+     pointRadius:0, borderWidth:1, tension:.25, hidden:true},
+  ];
+  const opts = (ytitle)=>({responsive:true, animation:false,
+    interaction:{mode:"index",intersect:false},
+    scales:{x:{type:"time",time:{unit: hours<=24?"hour":"day"},
+               grid:{color:"#27313f"},ticks:{color:"#8b98a9"}},
+            y:{title:{display:true,text:ytitle,color:"#8b98a9"},
+               grid:{color:"#27313f"},ticks:{color:"#8b98a9"}}},
+    plugins:{legend:{labels:{color:"#e6edf3",boxWidth:12}}}});
+
+  if(tempChart) tempChart.destroy();
+  tempChart = new Chart(document.getElementById("tempChart"),
+    {type:"line", data:{datasets:dsTemp}, options:opts("°F")});
+
+  const dsSp = [
+    {label:"Setpoint", data:mk(P,"setpoint"), borderColor:"#bc8cff",
+     pointRadius:0, borderWidth:2, stepped:true},
+    {label:"AC running", data:P.map(p=>({x:p.ts*1000,y:(p.ac_running?1:0)})),
+     borderColor:"#3fb950", backgroundColor:"rgba(63,185,80,.15)",
+     pointRadius:0, borderWidth:1, fill:true, stepped:true, yAxisID:"y2"},
+  ];
+  const spOpts = opts("°F");
+  spOpts.scales.y2 = {position:"right",min:0,max:1,ticks:{stepSize:1,color:"#8b98a9",
+     callback:v=>v?"on":"off"},grid:{display:false}};
+  if(spChart) spChart.destroy();
+  spChart = new Chart(document.getElementById("spChart"),
+    {type:"line", data:{datasets:dsSp}, options:spOpts});
+}
+
+document.getElementById("ranges").addEventListener("click", e=>{
+  if(e.target.dataset.h){
+    hours = +e.target.dataset.h;
+    document.querySelectorAll("#ranges button").forEach(b=>b.classList.remove("active"));
+    e.target.classList.add("active");
+    loadHistory();
+  }
+});
+
+async function loadAnalytics(){
+  const a = await (await fetch("/api/analytics?days=7")).json();
+  const el = document.getElementById("analytics");
+  if(!a.has_data){ el.innerHTML = `<div class="card muted">Collecting data…</div>`; return; }
+  const P = a.periods||{};
+  const order = ["day","evening","night"];
+  // derive band labels from live config (goal_summary) so they can't drift from
+  // what the controller actually evaluates.
+  const gs = a.goal_summary||{};
+  const dl=gs.day_low??72, dh=gs.day_high??74, nl=gs.night_low??69,
+        nh=gs.night_high??71, nt=gs.night_target??70;
+  const label = {day:`Day 9a–5p (${dl}–${dh})`, evening:`Evening 5–9p (→${nt})`,
+                 night:`Night 9p–9a (${nl}–${nh})`};
+  let rows = order.filter(p=>P[p]).map(p=>{
+    const d=P[p];
+    return `<tr><td class="k">${label[p]}</td><td>${d.in_band_pct}%</td><td>${d.avg_temp}°</td>
+            <td>${d.mae}°</td><td>${d.ac_on_pct}%</td><td>${d.turbo_pct}%</td><td>${d.central_ac_pct??"—"}%</td></tr>`;
+  }).join("");
+  const periodTbl = `<div class="chartbox"><table>
+    <tr><th>Period</th><th>In band</th><th>Avg temp</th><th>MAE</th><th>AC on</th><th>Boost</th><th>Central AC</th></tr>
+    ${rows}</table></div>`;
+
+  const e = a.energy||{};
+  const energyCard = `<div class="chartbox" style="margin-top:14px;display:flex;gap:26px;flex-wrap:wrap;align-items:baseline">
+    <div><div class="lbl" style="color:var(--muted)">Energy (est, ${e.days||7}d)</div>
+      <div class="val">${e.kwh??"—"}<span class="unit">kWh</span></div></div>
+    <div><div class="lbl" style="color:var(--muted)">Est. cost</div>
+      <div class="val">$${e.cost??"—"}</div></div>
+    <div class="muted" style="font-size:12px">@ $${e.cost_per_kwh??"?"}/kWh · estimated from AC runtime + boost + standby (unit has no power meter)</div>
+  </div>`;
+
+  const md = a.modes||{}; const fc = a.freecool||{}; const of = a.office||{};
+  const modeCard = `<div class="chartbox" style="margin-top:14px;display:flex;gap:26px;flex-wrap:wrap;align-items:baseline">
+    <div><div class="lbl" style="color:var(--muted)">Compressor (cool)</div><div class="val">${md.cool??"—"}<span class="unit">h</span></div></div>
+    <div><div class="lbl" style="color:var(--muted)">Free-cool (fan)</div><div class="val" style="color:var(--good)">${md.fan??"—"}<span class="unit">h</span></div></div>
+    <div><div class="lbl" style="color:var(--muted)">Idle</div><div class="val">${md.off??"—"}<span class="unit">h</span></div></div>
+    <div><div class="lbl" style="color:var(--muted)">Saved by free-cool</div><div class="val" style="color:var(--good)">$${fc.cost_saved??"—"}</div>
+      <div class="muted" style="font-size:12px">${fc.kwh_saved??"—"} kWh vs compressor</div></div>
+    <div><div class="lbl" style="color:var(--muted)">Office→Ethan gap</div><div class="val">${of.avg_room_office_gap??"—"}<span class="unit">°F</span></div>
+      <div class="muted" style="font-size:12px">coupling: bigger = more isolated</div></div>
+  </div>`;
+
+  const D = a.daily||[];
+  const dailyRows = D.slice().reverse().map(d=>
+    `<tr><td class="muted">${d.date.slice(5)}</td><td>${d.in_band_pct}%</td>
+     <td>${d.min}–${d.max}°</td><td>${d.temp_9pm!=null?d.temp_9pm+"°":"—"}</td>
+     <td>${d.ac_hours}h</td><td>${d.kwh} kWh</td><td>$${d.cost}</td></tr>`).join("");
+  const dailyTbl = `<div class="chartbox" style="margin-top:14px"><table>
+     <tr><th>Day</th><th>In band</th><th>Range</th><th>9pm</th><th>AC hrs</th><th>Energy</th><th>Cost</th></tr>
+     ${dailyRows||'<tr><td colspan=7 class="muted">no full days yet</td></tr>'}</table></div>`;
+
+  const c = a.correlations||{};
+  const insight = `<div class="chartbox" style="margin-top:14px">
+    <div class="lbl" style="color:var(--muted)">What drives Ethan's room (correlation, 7d)</div>
+    <div style="margin-top:8px;display:flex;gap:22px;flex-wrap:wrap">
+      <div><span class="val" style="font-size:22px">${c.outdoor??"—"}</span> <span class="muted">outdoor</span></div>
+      <div><span class="val" style="font-size:22px">${c.office??"—"}</span> <span class="muted">office temp</span></div>
+    </div>
+    <div class="muted" style="margin-top:6px;font-size:12px">
+      ${(c.outdoor!=null&&c.office!=null&&c.outdoor>0.6&&Math.abs(c.office)<0.4)
+        ?"Outdoor dominates; office tracks Ethan's room weakly — a doorway fan would help most.":""}
+    </div></div>`;
+
+  const N = a.nights_9pm||[];
+  const g = a.goal_summary||{};
+  const chips = N.map(n=>`<span class="pill ${n.met_goal?'ok':'hot'}" title="${n.date}">
+      ${n.date.slice(5)}: ${n.temp_9pm}°</span>`).join(" ");
+  const goal = `<div class="chartbox" style="margin-top:14px">
+    <div class="lbl" style="color:var(--muted)">${g.night_low??69}–${g.night_high??71}°F by 9pm — last nights (${g.hit||0}/${g.nights||0} met)</div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">${chips||'<span class="muted">no nights yet</span>'}</div></div>`;
+
+  el.innerHTML = periodTbl + modeCard + energyCard + goal + dailyTbl + insight;
+}
+
+async function refresh(){ await Promise.all([loadStatus(),loadHistory(),loadActions(),loadAnalytics()]); }
+refresh();
+setInterval(refresh, 30000);
+</script>
+</body>
+</html>

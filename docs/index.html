@@ -243,8 +243,9 @@ function renderCharts(){
     {label:"Band low",data:xy("low"),borderColor:"rgba(139,152,169,.35)",borderWidth:1,pointRadius:0},
     {label:"Target",data:xy("target"),borderColor:"#3fb950",borderWidth:1.5,borderDash:[5,4],pointRadius:0},
   ];
+  const topt=opt("°F"); topt.scales.y.suggestedMin=60; topt.scales.y.suggestedMax=95;
   if(tempChart)tempChart.destroy();
-  tempChart=new Chart(document.getElementById("tempChart"),{type:"line",data:{datasets:tds},options:opt("°F")});
+  tempChart=new Chart(document.getElementById("tempChart"),{type:"line",data:{datasets:tds},options:topt});
   const sds=[
     {label:"Setpoint",data:xy("setpoint"),borderColor:"#bc8cff",borderWidth:2,pointRadius:0,stepped:true},
     {label:"AC running",data:H.map(r=>({x:r.ts*1000,y:r.ac_running?1:0})),borderColor:"#3fb950",

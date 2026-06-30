@@ -191,8 +191,12 @@ function renderCards(){
   document.getElementById("updated").textContent="updated "+(s.updated?d.toLocaleString():"—");
   const lv=document.getElementById("livelbl"), dot=document.querySelector(".dot");
   const sw=document.getElementById("stalewarn");
-  if(ageMin>40){sw.style.display="block";sw.textContent=`⚠ Last cloud update ${I(ageMin)} min ago — loop may be paused/delayed.`;
-    lv.textContent="stale";dot.style.background="var(--warn)";}
+  // GitHub throttles scheduled Actions (real cadence ~30-90 min, not the 15 min
+  // requested), and the AC holds its last command between runs — so only warn
+  // when it's been long enough to suggest the loop is actually stuck.
+  if(ageMin>120){sw.style.display="block";sw.textContent=`⚠ Last cloud update ${I(ageMin)} min ago — loop may be stuck (GitHub cron is slow; >2h is unusual).`;
+    lv.textContent="stale";dot.style.background="var(--hot)";}
+  else if(ageMin>75){sw.style.display="none";lv.textContent="delayed";dot.style.background="var(--warn)";}
   else{sw.style.display="none";lv.textContent="live";dot.style.background="var(--good)";}
   const pill=te==null?"":(te>hi?`<span class="pill hot">above band</span>`:
     te<lo?`<span class="pill cold">below band</span>`:`<span class="pill ok">in band</span>`);

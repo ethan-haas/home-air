@@ -330,18 +330,19 @@ function renderAnalytics(){
   document.getElementById("corrNote").textContent=
     (co!=null&&co>0.5)?"Outdoor dominates Ethan's room; office couples weakly — a doorway fan would help most.":"";
 
-  // recent activity (mode/setpoint changes + errors), newest first
+  // recent activity — one row PER cycle (newest first), with a ▲change marker
   const acts=[]; let prev=null;
   for(let i=H.length-1;i>=0&&acts.length<40;i--){const r=H[i];
     const key=`${r.setpoint}|${r.mode}|${r.fan}|${r.turbo}`;
     if(r.error){acts.push({ts:r.ts,k:"error",txt:r.error.slice(0,60)});}
-    else if(key!==prev){acts.push({ts:r.ts,k:"setpoint",
-      txt:`sp=${F(r.setpoint)} ${r.mode} fan=${r.fan}${r.turbo?' +turbo':''} ethan=${F(r.t_ethan)}°`});}
+    else{const changed=(prev!==null&&key!==prev);
+      acts.push({ts:r.ts,k:changed?"change":"cycle",
+        txt:`${changed?'▲ ':''}ethan ${F(r.t_ethan)}° · sp ${F(r.setpoint)} ${r.mode} ${r.fan}${r.turbo?' +turbo':''}`});}
     prev=key;
   }
   document.getElementById("acts").innerHTML=acts.map(a=>{
     const t=new Date(a.ts*1000).toLocaleString([], {month:"numeric",day:"numeric",hour:"numeric",minute:"2-digit"});
-    const cl=a.k==="error"?"kerr":a.k==="warn"?"kwarn":"k";
+    const cl=a.k==="error"?"kerr":a.k==="warn"?"kwarn":a.k==="change"?"k":"muted";
     return `<div class="row"><span class="t">${t}</span><span class="${cl}">${a.txt}</span></div>`;
   }).join("")||'<span class="muted">no activity</span>';
 }

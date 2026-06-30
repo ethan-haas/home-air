@@ -1,5 +1,5 @@
 {
-  "integral": 0.0,
+  "integral": 4679.99999999999,
   "last_setpoint": 60.0,
   "last_mode": "cool",
   "last_fan": [
@@ -8,6 +8,6 @@
   ],
   "last_cmd_time": 1782769309.3907218,
   "interval_s": 120,
-  "last_office": 61.7,
-  "updated": 1782803062.677463
+  "last_office": 63.5,
+  "updated": 1782808058.961455
 }

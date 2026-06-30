@@ -1,0 +1,14 @@
+name = "home-air-pinger"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Cloudflare Cron Trigger — fires scheduled() every 15 minutes (honored on time).
+[triggers]
+crons = ["*/15 * * * *"]
+
+# Non-secret config. The GitHub token is set separately as an encrypted secret:
+#   wrangler secret put GH_TOKEN
+[vars]
+REPO = "ethan-haas/home-air"
+WORKFLOW = "control.yml"
+REF = "main"

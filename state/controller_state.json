@@ -3,11 +3,11 @@
   "last_setpoint": 60.0,
   "last_mode": "cool",
   "last_fan": [
-    "high",
-    false
+    "max",
+    true
   ],
   "last_cmd_time": 1782817792.4689429,
   "interval_s": 120,
   "last_office": 66.2,
-  "updated": 1782835768.162042
+  "updated": 1782838761.3046267
 }

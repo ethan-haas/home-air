@@ -1,9 +1,9 @@
 {
-  "updated": 1782905195.5040572,
-  "t_ethan": 73.0,
-  "t_office": 63.5,
-  "outdoor": 72.5,
-  "humidity": 94.0,
+  "updated": 1782908731.6607444,
+  "t_ethan": 72.2,
+  "t_office": 59.9,
+  "outdoor": 76.5,
+  "humidity": 88.0,
   "target": 70.0,
   "band": [
     69.0,
@@ -16,8 +16,8 @@
   "ac_running": true,
   "indoor_hum": 65.0,
   "central_cool": 0,
-  "t_living": 68.3,
-  "t_heather": 71.6,
+  "t_living": 69.6,
+  "t_heather": 71.4,
   "in_band": false,
   "cmd": {
     "setpoint": 60.0,

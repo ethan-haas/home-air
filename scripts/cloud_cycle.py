@@ -238,7 +238,11 @@ def main() -> None:
             mismatch.append("mode")
         if bool(conf_running) != bool(dec.ac_should_run):
             mismatch.append("running")
-        if conf_setpoint is not None and abs(conf_setpoint - send_sp) > 0.6:
+        # the unit stores the target in 0.5C steps (~0.9F), so an exact F command
+        # round-trips back up to ~0.9F off (60.0F -> 16C -> 60.8F) with nothing
+        # wrong. Only flag a setpoint mismatch beyond one C-quantum, else the
+        # dashboard shows a permanent false "setpoint differs" every cycle.
+        if conf_setpoint is not None and abs(conf_setpoint - send_sp) > 1.0:
             mismatch.append("setpoint")
 
     # "applied" = the call succeeded AND the device confirms our full intent

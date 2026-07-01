@@ -50,10 +50,12 @@ class FakeEcobeeClient:
 
 class FakeMideaCloudClient:
     """Minimal Midea cloud mock."""
-    def __init__(self, cfg, device_accepts=True, device_turbo_result=None):
+    def __init__(self, cfg, device_accepts=True, device_turbo_result=None,
+                 setpoint_offset=0.0):
         self.cfg = cfg
         self.device_accepts = device_accepts
         self.device_turbo_result = device_turbo_result
+        self.setpoint_offset = setpoint_offset   # F/C round-trip drift to simulate
         self.last_apply_call = None
 
     def refresh(self):
@@ -86,7 +88,7 @@ class FakeMideaCloudClient:
 
         return MideaState(
             indoor_temp_f=72.0,
-            target_f=setpoint_f,
+            target_f=setpoint_f + self.setpoint_offset,
             power=power if self.device_accepts else False,
             mode=mode if self.device_accepts else "cool",
             online=True,
@@ -450,3 +452,34 @@ def test_turbo_suppressed_when_unsupported(cloud_cycle_env, monkeypatch):
     assert status["cmd"]["fan"] == "max", "MAX fan held for airflow instead of turbo"
     assert "turbo" not in status["mismatch"], "no phantom turbo -> no turbo mismatch"
     assert status["turbo"] is False
+
+
+def test_setpoint_cquantum_not_flagged(cloud_cycle_env, monkeypatch):
+    """A ~0.9F F/C round-trip drift (60.0F -> 16C -> 60.8F) must NOT show as a
+    setpoint mismatch, else the dashboard cries wolf every cycle."""
+    fake_ecobee = FakeEcobeeClient(None, temps_ethan=[72.0])
+    fake_midea = FakeMideaCloudClient(None, device_accepts=True, setpoint_offset=0.8)
+    fake_weather = FakeWeather(temp_f=80.0, forecast_temp_f=82.0)
+    monkeypatch.setattr("hvac.ecobee_client.EcobeeClient", lambda cfg: fake_ecobee)
+    monkeypatch.setattr("hvac.midea_cloud.MideaCloudClient", lambda cfg: fake_midea)
+    monkeypatch.setattr("hvac.weather.get_weather", lambda lat, lon, lead_min: fake_weather)
+    monkeypatch.setattr("scripts.cloud_cycle.local_hour", lambda now: 14.0)
+    from scripts.cloud_cycle import main
+    main()
+    status = json.loads((cloud_cycle_env["state_dir"] / "status.json").read_text())
+    assert "setpoint" not in status["mismatch"], "0.8F C-quantum drift is not a real mismatch"
+
+
+def test_setpoint_large_drift_flagged(cloud_cycle_env, monkeypatch):
+    """A genuine setpoint divergence (>1F) still flags."""
+    fake_ecobee = FakeEcobeeClient(None, temps_ethan=[72.0])
+    fake_midea = FakeMideaCloudClient(None, device_accepts=True, setpoint_offset=2.0)
+    fake_weather = FakeWeather(temp_f=80.0, forecast_temp_f=82.0)
+    monkeypatch.setattr("hvac.ecobee_client.EcobeeClient", lambda cfg: fake_ecobee)
+    monkeypatch.setattr("hvac.midea_cloud.MideaCloudClient", lambda cfg: fake_midea)
+    monkeypatch.setattr("hvac.weather.get_weather", lambda lat, lon, lead_min: fake_weather)
+    monkeypatch.setattr("scripts.cloud_cycle.local_hour", lambda now: 14.0)
+    from scripts.cloud_cycle import main
+    main()
+    status = json.loads((cloud_cycle_env["state_dir"] / "status.json").read_text())
+    assert "setpoint" in status["mismatch"], "2F divergence is a real mismatch"

@@ -1,23 +1,23 @@
 {
-  "updated": 1782919694.8672802,
-  "t_ethan": 74.6,
+  "updated": 1782923082.9842956,
+  "t_ethan": 74.5,
   "t_office": 66.2,
-  "outdoor": 87.2,
-  "humidity": 68.0,
-  "target": 73.08235294117647,
+  "outdoor": 90.1,
+  "humidity": 61.0,
+  "target": 73.4235294117647,
   "band": [
     72.0,
     74.0
   ],
-  "setpoint": 60.8,
+  "setpoint": 60.0,
   "mode": "cool",
   "fan": "max",
   "turbo": true,
   "ac_running": true,
-  "indoor_hum": 67.0,
+  "indoor_hum": 68.0,
   "central_cool": 0,
-  "t_living": 70.2,
-  "t_heather": 72.3,
+  "t_living": 69.8,
+  "t_heather": 72.4,
   "in_band": false,
   "cmd": {
     "setpoint": 60.0,
@@ -27,15 +27,15 @@
     "running": true
   },
   "confirmed": {
-    "turbo": true,
-    "fan": "max",
-    "setpoint": 60.8,
-    "mode": "cool",
-    "running": true,
-    "online": true
+    "turbo": null,
+    "fan": null,
+    "setpoint": null,
+    "mode": null,
+    "running": null,
+    "online": null
   },
-  "unconfirmed": false,
+  "unconfirmed": true,
   "mismatch": [],
-  "applied": true,
-  "error": null
+  "applied": false,
+  "error": "Midea cloud API error: The appliance is offline (3123)"
 }

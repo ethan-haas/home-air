@@ -1,6 +1,6 @@
 {
-  "updated": 1782883283.373295,
-  "t_ethan": 74.1,
+  "updated": 1782883460.7415586,
+  "t_ethan": 73.8,
   "t_office": 61.7,
   "outdoor": 77.0,
   "humidity": 80.0,
@@ -16,7 +16,7 @@
   "ac_running": true,
   "indoor_hum": 53.0,
   "central_cool": 1,
-  "t_living": 67.8,
+  "t_living": 67.6,
   "t_heather": 71.6,
   "in_band": false,
   "cmd": {
@@ -35,9 +35,7 @@
     "online": true
   },
   "unconfirmed": false,
-  "mismatch": [
-    "setpoint"
-  ],
-  "applied": false,
+  "mismatch": [],
+  "applied": true,
   "error": null
 }

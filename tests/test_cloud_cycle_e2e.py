@@ -483,3 +483,27 @@ def test_setpoint_large_drift_flagged(cloud_cycle_env, monkeypatch):
     main()
     status = json.loads((cloud_cycle_env["state_dir"] / "status.json").read_text())
     assert "setpoint" in status["mismatch"], "2F divergence is a real mismatch"
+
+
+def test_manual_app_boost_reported_not_flagged(cloud_cycle_env, monkeypatch):
+    """User turns Turbo on in the app (device turbo_fan=True) while autonomous
+    boost is OFF. The controller doesn't command boost, so this is NOT a failed
+    command: top-level boost shows True (device truth), but it must not appear in
+    `mismatch` and must not drop `applied`."""
+    cloud_cycle_env["config"].midea_apply_turbo_fan = False   # controller ignores boost
+    state_dir = cloud_cycle_env["state_dir"]
+
+    fake_ecobee = FakeEcobeeClient(None, temps_ethan=[70.5])   # in-band, no boost decision
+    # device reports boost ON regardless of command (user set it in the app)
+    fake_midea = FakeMideaCloudClient(None, device_accepts=True, device_turbo_result=True)
+    fake_weather = FakeWeather(temp_f=78.0, forecast_temp_f=80.0)
+    monkeypatch.setattr("hvac.ecobee_client.EcobeeClient", lambda cfg: fake_ecobee)
+    monkeypatch.setattr("hvac.midea_cloud.MideaCloudClient", lambda cfg: fake_midea)
+    monkeypatch.setattr("hvac.weather.get_weather", lambda lat, lon, lead_min: fake_weather)
+    monkeypatch.setattr("scripts.cloud_cycle.local_hour", lambda now: 14.0)
+    from scripts.cloud_cycle import main
+    main()
+    status = json.loads((state_dir / "status.json").read_text())
+    assert status["turbo"] is True, "device boost shown as truth"
+    assert "turbo" not in status["mismatch"], "manual boost is not a failed command"
+    assert status["applied"] is True, "no controller command was violated"

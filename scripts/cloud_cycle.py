@@ -233,7 +233,11 @@ def main() -> None:
 
     mismatch = []
     if confirmed is not None:
-        if bool(conf_turbo) != bool(dec.turbo):
+        # `mismatch` = intent the device did NOT honor. Only judge boost when the
+        # controller actually commands it (autonomous mode); when boost is left to
+        # the app's manual Turbo button, a device-on/controller-silent state is
+        # expected, not a failed command — report it, don't flag it.
+        if cfg.midea_apply_turbo_fan and bool(conf_turbo) != bool(dec.turbo):
             mismatch.append("turbo")
         if conf_mode != dec.mode:
             mismatch.append("mode")

@@ -86,11 +86,15 @@ class Service:
         apply automatically — the system gets better as data grows."""
         if now - self._last_learn < self.learn_interval_s:
             return
-        self._last_learn = now
         try:
             from .learn import learn
             res = learn(self.path_for_learn(), verbose=False)
             self.storage.log_action("learn", f"refit feedforward: {res}")
+            if res is not None:
+                # advance the 24h clock only after a successful, persisted fit;
+                # if data was insufficient (res is None), retry next cycle instead
+                # of blocking for a full day.
+                self._last_learn = now
         except Exception as e:
             self.storage.log_action("error", f"learn: {e}")
 
@@ -186,8 +190,8 @@ class Service:
             ms = self.midea.refresh()
             if getattr(ms, "indoor_temp_f", None) is not None:
                 self._last_office = ms.indoor_temp_f   # feed next cycle's efficiency logic
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"midea refresh failed: {e}")
         self.storage.log_reading(Reading(
             ts=now, t_ethan=t_ethan,
             t_office=getattr(ms, "indoor_temp_f", None),

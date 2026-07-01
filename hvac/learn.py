@@ -23,13 +23,21 @@ the controller always loads the latest, so the system improves as data grows.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import replace
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
 from .controller import ControllerParams
 from .storage import Storage
+
+# repo-root/state/model_params.json — the same file scripts/cloud_cycle.py reads
+# (PARAMS_FILE there) so the cloud control path can pick up learned params too.
+HOME = Path(__file__).resolve().parent.parent
+STATE_DIR = HOME / "state"
+PARAMS_FILE = STATE_DIR / "model_params.json"
 
 MIN_SAMPLES = 60          # need a meaningful amount of cooling data
 OFFSET_LO, OFFSET_HI = 1.0, 12.0
@@ -94,6 +102,18 @@ def fit_params(rows, base: ControllerParams) -> Optional[ControllerParams]:
     return replace(base, base_offset_f=base_offset, outdoor_gain=gain)
 
 
+def _export_params_json(params: ControllerParams,
+                        path: Path = PARAMS_FILE) -> None:
+    """Write learned params as JSON so the cloud path (scripts/cloud_cycle.py,
+    which has no SQLite state) can also pick them up. Round-trips through
+    ControllerParams.from_dict(json.load(...)) — same dict shape as to_dict()."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(params.to_dict(), indent=2))
+    except Exception:
+        pass    # best-effort: SQLite (st.save_params) remains the source of truth
+
+
 def learn(db_path, verbose: bool = True) -> Optional[dict]:
     st = Storage(db_path)
     try:
@@ -107,6 +127,7 @@ def learn(db_path, verbose: bool = True) -> Optional[dict]:
             return None
         n = sum(1 for r in rows if r["ac_running"] and r["setpoint_cmd"] is not None)
         st.save_params(new.to_dict(), source="learn", n_samples=n)
+        _export_params_json(new)
         if verbose:
             print(f"learn: refit from {n} cooling samples -> "
                   f"base_offset_f={new.base_offset_f:.2f} "

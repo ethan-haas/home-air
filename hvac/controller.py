@@ -61,7 +61,6 @@ class ControllerParams:
     # turbo only for a big daytime deficit (fast recovery, but loud + thirsty).
     boost_error_f: float = 2.5      # error above which to use turbo + MAX fan (day)
     high_fan_error_f: float = 1.5   # error above which to use HIGH fan (day)
-    night_max_fan: str = "low"      # fan ceiling during the sleep window
     # efficiency: data shows the office is usually already cold while Ethan's room
     # stays hot (airflow-limited, not power-limited). Turbo only helps when the
     # OFFICE itself can't reach its setpoint; once the office is within this many

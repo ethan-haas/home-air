@@ -82,5 +82,5 @@ def _forecast_ahead(data: dict, current_time: Optional[str],
         r = frac - int(frac)
         return float(a + (b - a) * r)
     if idx < len(temps):
-        return float(temps[min(idx + round(frac), len(temps) - 1)])
+        return float(temps[min(j, len(temps) - 1)])
     return None

@@ -4,11 +4,11 @@
   "last_mode": "cool",
   "last_fan": [
     "max",
-    false
+    true
   ],
   "last_cmd_time": 1782817792.4689429,
   "interval_s": 120,
   "last_office": 61.7,
-  "last_ethan": 72.8,
-  "updated": 1782884919.7569878
+  "last_ethan": 75.5,
+  "updated": 1782885356.8357642
 }

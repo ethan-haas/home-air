@@ -49,3 +49,4 @@ ts,t_ethan,t_office,outdoor,humidity,target,band_low,band_high,setpoint,mode,fan
 1782919695,74.6,66.2,87.2,68.0,73.08235294117647,72.0,74.0,60.0,cool,max,1,1,1,67.0,0,70.2,72.3,
 1782923083,74.5,66.2,90.1,61.0,73.4235294117647,72.0,74.0,60.0,cool,max,1,1,0,68.0,0,69.8,72.4,Midea cloud API error: The appliance is offline (3123)
 1782926344,74.5,66.2,92.0,57.0,73.6470588235294,72.0,74.0,60.0,cool,high,0,1,0,68.0,0,69.8,72.4,Midea cloud API error: The appliance is offline (3123)
+1782929658,74.5,66.2,93.7,54.0,73.84705882352941,72.0,74.0,60.0,cool,medium,0,1,0,68.0,0,69.8,72.4,Midea cloud API error: The appliance is offline (3123)

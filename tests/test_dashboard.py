@@ -36,6 +36,9 @@ def test_status_payload(tmp_path):
     assert s["summary_24h"]["n"] == 30
     assert 0 <= s["summary_24h"]["in_band_pct"] <= 100
     assert s["params"]["base_offset_f"] == 5.1
+    # command-health: 'applied' isn't a stored column yet (LAN path doesn't
+    # persist device-confirmed state) -> must be honestly None, never fabricated.
+    assert cur["applied"] is None
     st.close()
 
 

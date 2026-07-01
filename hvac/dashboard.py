@@ -82,6 +82,11 @@ def status_payload(storage: Storage, sched: ScheduleConfig | None = None,
             "in_band": in_band,
             "fan": (last["fan"] if "fan" in last.keys() else None),
             "turbo": (last["turbo"] if "turbo" in last.keys() else None),
+            # command-health: the LAN service path doesn't yet persist
+            # device-confirmed state, so we can only surface these IF the
+            # SQLite row actually has the column (same guarded idiom as fan/
+            # turbo above). Never fabricate a confirmed value.
+            "applied": (last["applied"] if "applied" in last.keys() else None),
             "t_living": (last["t_living"] if "t_living" in last.keys() else None),
             "t_heather": (last["t_heather"] if "t_heather" in last.keys() else None),
             "indoor_hum": (last["indoor_hum"] if "indoor_hum" in last.keys() else None),

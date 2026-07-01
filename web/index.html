@@ -87,7 +87,7 @@
 </div>
 
 <script>
-const F = n => (n==null? "—" : (Math.round(n*10)/10));
+const F = n => (n==null||isNaN(n)? "—" : (Math.round(n*10)/10));
 const fmtTime = ts => new Date(ts*1000).toLocaleString();
 let hours = 24, tempChart, spChart;
 
@@ -110,11 +110,11 @@ async function loadStatus(){
     return;
   }
   const c = s.current;
-  let state, pill;
-  if(c.ac_running===0||c.ac_running===false){ state="Idle"; pill=`<span class="pill off">AC off</span>`; }
-  else if(c.in_band){ state="In band"; pill=`<span class="pill ok">in band</span>`; }
-  else if(c.t_ethan> c.band_high){ state="Too warm"; pill=`<span class="pill hot">above band</span>`; }
-  else { state="Cooling / cool"; pill=`<span class="pill cold">below band</span>`; }
+  let pill;
+  if(c.ac_running===0||c.ac_running===false){ pill=`<span class="pill off">AC off</span>`; }
+  else if(c.in_band){ pill=`<span class="pill ok">in band</span>`; }
+  else if(c.t_ethan> c.band_high){ pill=`<span class="pill hot">above band</span>`; }
+  else { pill=`<span class="pill cold">below band</span>`; }
 
   const age = c.age_s>180 ? `<span class="err">stale (${Math.round(c.age_s/60)}m old)</span>`
                           : `${c.age_s}s ago`;
@@ -130,8 +130,16 @@ async function loadStatus(){
       const head=noSp?(c.mode==='fan'?'Fan':'Idle'):F(c.setpoint);
       const sub=c.mode==='fan'?'FREE-COOL · compressor off'
                :c.mode==='off'?'compressor off':(c.mode||'');
+      // BOOST truth: only claim BOOST if the device reported turbo (c.turbo);
+      // if the last command wasn't confirmed applied, say so instead of
+      // silently showing BOOST as if it were verified.
+      const boostLbl = c.turbo
+        ? (c.applied===false
+            ? ' · <b style="color:var(--warn)">⚠ BOOST (last cmd unconfirmed)</b>'
+            : ' · <b style="color:var(--warn)">BOOST</b>')
+        : '';
       return card(noSp?"AC mode":"AC setpoint", head, noSp?"":"°F",
-         `<span class="${c.mode==='fan'?'pill ok':'muted'}">${sub} · fan ${c.fan||"?"}${c.turbo?' · <b style="color:var(--warn)">BOOST</b>':''}</span>`);})() +
+         `<span class="${c.mode==='fan'?'pill ok':'muted'}">${sub} · fan ${c.fan||"?"}${boostLbl}</span>`);})() +
     card("Outdoor", F(c.outdoor), "°F",
          c.humidity!=null?`<span class="muted">${F(c.humidity)}% RH</span>`:"") +
     card("Indoor RH", c.indoor_hum!=null?F(c.indoor_hum):"—", "%",
@@ -163,8 +171,7 @@ async function loadActions(){
 async function loadHistory(){
   const h = await (await fetch("/api/history?hours="+hours)).json();
   const P = h.points;
-  const t = P.map(p=>p.ts*1000);
-  const mk = (arr,key)=>P.map(p=>({x:p.ts*1000,y:p[key]}));
+  const mk = (arr,key)=>arr.map(p=>({x:p.ts*1000,y:p[key]}));
 
   const dsTemp = [
     {label:"Ethan", data:mk(P,"t_ethan"), borderColor:"#4fb6ff", backgroundColor:"#4fb6ff",

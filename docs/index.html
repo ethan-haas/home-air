@@ -86,6 +86,7 @@
     </div>
   </header>
   <div id="stalewarn" class="warnbar" style="display:none"></div>
+  <div id="cmdwarn" class="warnbar" style="display:none"></div>
 
   <div class="grid cards" id="cards"></div>
 
@@ -106,7 +107,7 @@
 
   <div class="two" style="margin-top:10px">
     <div class="panel">
-      <div class="lbl">Energy & runtime <span class="muted">(window)</span></div>
+      <div class="lbl">Energy & runtime <span class="muted">(all history)</span></div>
       <div class="statrow" style="margin-top:10px" id="energyRow"></div>
     </div>
     <div class="panel">
@@ -115,7 +116,7 @@
     </div>
   </div>
 
-  <h2>70°F-by-9pm goal — recent nights</h2>
+  <h2>Comfort goal by 9pm — recent nights</h2>
   <div class="panel"><div id="goalSummary" class="muted">—</div><div class="chips" id="goalChips"></div></div>
 
   <h2>Daily summary</h2>
@@ -154,8 +155,36 @@ function rowKW(r){
   return KW.idle;
 }
 function period(h){ return (h>=21||h<9)?"night":(h>=17?"evening":(h>=9?"day":"night")); }
-function localHour(ts){const d=new Date(ts*1000);return d.getHours()+d.getMinutes()/60;}
-function dayKey(ts){const d=new Date(ts*1000);return d.toLocaleDateString('en-CA');}
+// Controller schedule is pinned to America/New_York (see scripts/cloud_cycle.py
+// local_hour()); the dashboard must bucket in the SAME timezone, not the
+// browser's local time, or period/day boundaries drift by the viewer's UTC offset.
+function localHour(ts){
+  const d=new Date(ts*1000);
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',
+    hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(d);
+  const h=+parts.find(p=>p.type==='hour').value, m=+parts.find(p=>p.type==='minute').value;
+  return h+m/60;
+}
+function dayKey(ts){const d=new Date(ts*1000);return d.toLocaleDateString('en-CA',{timeZone:'America/New_York'});}
+// Minimal CSV line parser (respects double-quoted fields, incl. embedded
+// commas and "" escaping) -- csv.writer quotes the `error` column, which
+// naive split(",") corrupts.
+function parseCsvLine(line){
+  const out=[]; let cur="", q=false;
+  for(let i=0;i<line.length;i++){
+    const c=line[i];
+    if(q){
+      if(c==='"'){ if(line[i+1]==='"'){cur+='"'; i++;} else {q=false;} }
+      else cur+=c;
+    }else{
+      if(c==='"') q=true;
+      else if(c===','){out.push(cur); cur="";}
+      else cur+=c;
+    }
+  }
+  out.push(cur);
+  return out;
+}
 function pearson(xs,ys){
   const n=xs.length; if(n<3) return null;
   let sx=0,sy=0; for(let i=0;i<n;i++){sx+=xs[i];sy+=ys[i];}
@@ -171,7 +200,7 @@ async function load(){
     const txt=await(await fetch("history.csv"+bust())).text();
     const lines=txt.trim().split(/\r?\n/), head=lines[0].split(",");
     const ix=k=>head.indexOf(k);
-    HIST=lines.slice(1).map(l=>{const c=l.split(","); return {
+    HIST=lines.slice(1).map(l=>{const c=parseCsvLine(l); return {
       ts:+c[ix("ts")], t_ethan:num(c[ix("t_ethan")]), t_office:num(c[ix("t_office")]),
       outdoor:num(c[ix("outdoor")]), humidity:num(c[ix("humidity")]),
       target:num(c[ix("target")]), low:num(c[ix("band_low")]), high:num(c[ix("band_high")]),
@@ -191,13 +220,31 @@ function renderCards(){
   document.getElementById("updated").textContent="updated "+(s.updated?d.toLocaleString():"—");
   const lv=document.getElementById("livelbl"), dot=document.querySelector(".dot");
   const sw=document.getElementById("stalewarn");
+  const cw=document.getElementById("cmdwarn");
   // GitHub throttles scheduled Actions (real cadence ~30-90 min, not the 15 min
   // requested), and the AC holds its last command between runs — so only warn
   // when it's been long enough to suggest the loop is actually stuck.
+  let level=0, label="live";      // 0 ok, 1 warn, 2 hot -- combined w/ command health below
   if(ageMin>120){sw.style.display="block";sw.textContent=`⚠ Last cloud update ${I(ageMin)} min ago — loop may be stuck (GitHub cron is slow; >2h is unusual).`;
-    lv.textContent="stale";dot.style.background="var(--hot)";}
-  else if(ageMin>75){sw.style.display="none";lv.textContent="delayed";dot.style.background="var(--warn)";}
-  else{sw.style.display="none";lv.textContent="live";dot.style.background="var(--good)";}
+    label="stale";level=2;}
+  else if(ageMin>75){sw.style.display="none";label="delayed";level=Math.max(level,1);}
+  else{sw.style.display="none";}
+  // command-health: the controller's INTENT is not the same as device truth.
+  // Surface it in the headline, not just buried in Recent activity.
+  if(s.error){
+    cw.style.display="block";cw.textContent=`⚠ last command failed: ${s.error}`;
+    level=2; if(label==="live")label="error";
+  }else if(s.mismatch&&s.mismatch.length){
+    cw.style.display="block";cw.textContent=`⚠ device state differs from command: ${s.mismatch.join(", ")}`;
+    level=Math.max(level,1); if(label==="live")label="mismatch";
+  }else if(s.applied===false){
+    cw.style.display="block";cw.textContent="⚠ last command not confirmed applied";
+    level=Math.max(level,1); if(label==="live")label="unconfirmed";
+  }else{
+    cw.style.display="none";
+  }
+  lv.textContent=label;
+  dot.style.background=level===2?"var(--hot)":level===1?"var(--warn)":"var(--good)";
   const pill=te==null?"":(te>hi?`<span class="pill hot">above band</span>`:
     te<lo?`<span class="pill cold">below band</span>`:`<span class="pill ok">in band</span>`);
   const isFan=s.mode!=="cool";
@@ -215,12 +262,26 @@ function renderCards(){
     acon=Math.round(100*w.filter(r=>r.ac_running).length/w.length)+"%";
   }
   const card=(l,v,u,e)=>`<div class="card"><div class="lbl">${l}</div><div class="val">${v}<span class="unit">${u||""}</span></div>${e||""}</div>`;
+  // BOOST truth: s.turbo is confirmed-when-available (falls back to intent
+  // only when read-back failed). Never show BOOST as verified when the
+  // device disagrees or the read-back is missing.
+  const cmdTurbo=s.cmd&&s.cmd.turbo, turboMismatch=s.mismatch&&s.mismatch.includes("turbo");
+  let turboLbl="";
+  if(turboMismatch){
+    turboLbl=cmdTurbo
+      ?' · <b style="color:var(--warn)">⚠ BOOST requested — device reports OFF</b>'
+      :' · <b style="color:var(--warn)">⚠ device reports BOOST — not requested</b>';
+  }else if(s.unconfirmed&&cmdTurbo){
+    turboLbl=' · <b style="color:var(--warn)">BOOST (unconfirmed)</b>';
+  }else if(s.turbo){
+    turboLbl=' · <b style="color:var(--warn)">BOOST</b>';
+  }
   document.getElementById("cards").innerHTML=
     card("Ethan's room",F(te),"°F",pill)+
     card("Target",F(s.target),"°F",`<span class="muted mt">band ${F(lo)}–${F(hi)}</span>`)+
     card("Office (AC)",F(s.t_office),"°F",gap)+
     card("AC "+(isFan?"mode":"setpoint"),acHead,isFan?"":"°F",
-      `<span class="${s.mode==='fan'?'pill ok':'neutral pill'}">${acSub} · ${s.fan||"?"}${s.turbo?' · <b style="color:var(--warn)">BOOST</b>':''}</span>`)+
+      `<span class="${s.mode==='fan'?'pill ok':'neutral pill'}">${acSub} · ${s.fan||"?"}${turboLbl}</span>`)+
     card("Outdoor",F(s.outdoor),"°F",s.humidity!=null?`<span class="muted mt">${I(s.humidity)}% RH</span>`:"")+
     card("Indoor RH",I(s.indoor_hum),"%",s.central_cool?`<span class="pill cold">central AC on</span>`:`<span class="muted mt">central AC off</span>`)+
     card("In band (24h)",ib,"",`<span class="muted mt">AC on ${acon}</span>`)+
@@ -287,7 +348,7 @@ function renderAnalytics(){
   H.forEach(r=>{const h=r._dt/3600;kwh+=rowKW(r)*h;
     if(r.mode==="fan"&&r.ac_running)fanH+=h;else if(r.ac_running)coolH+=h;else offH+=h;
     if(r.ac_running)acH+=h;});
-  const saved=fanH*(KW.cool-KW.fan), cost=kwh*PRICE;
+  const saved=fanH*(KW.cool-KW.fan)*PRICE, cost=kwh*PRICE;
   document.getElementById("energyRow").innerHTML=
     `<div class="stat"><div class="big">${F(kwh)}<span class="unit">kWh</span></div><div class="muted">energy</div></div>
      <div class="stat"><div class="big">$${F(cost)}</div><div class="muted">est. cost</div></div>
@@ -300,16 +361,20 @@ function renderAnalytics(){
      <div class="stat"><div class="big" style="color:var(--good)">$${F(saved)}</div><div class="muted">saved vs compressor</div></div>
      <div class="stat"><div class="big">${F(gap)}<span class="unit">°F</span></div><div class="muted">office→Ethan gap</div></div>`;
 
-  // 9pm goal nights (night band 69-71 by config; use band cols if night)
+  // 9pm goal nights — use the row's own low/high band columns (tracks live
+  // config) instead of a hard-coded 69-71 that drifts from the schedule.
   const byDay={};
   H.forEach(r=>{(byDay[dayKey(r.ts)]=byDay[dayKey(r.ts)]||[]).push(r);});
   const nights=[];
   Object.keys(byDay).sort().forEach(day=>{
     const near=byDay[day].map(r=>({r,d:Math.abs(localHour(r.ts)-21)})).sort((a,b)=>a.d-b.d)[0];
-    if(near&&near.d<=1){const t=near.r.t_ethan; nights.push({day,t,met:t>=69&&t<=71});}
+    if(near&&near.d<=1){const t=near.r.t_ethan, lo=near.r.low, hi=near.r.high;
+      nights.push({day,t,lo,hi,met:(lo!=null&&hi!=null)?(t>=lo&&t<=hi):null});}
   });
   const last=nights.slice(-14), hit=last.filter(n=>n.met).length;
-  document.getElementById("goalSummary").innerHTML=`69–71°F by 9pm — last nights (<b>${hit}/${last.length}</b> met)`;
+  const lastBand=last.length?last[last.length-1]:null;
+  const bandLbl=(lastBand&&lastBand.lo!=null&&lastBand.hi!=null)?`${F(lastBand.lo)}–${F(lastBand.hi)}°F`:"target band";
+  document.getElementById("goalSummary").innerHTML=`${bandLbl} by 9pm — last nights (<b>${hit}/${last.length}</b> met)`;
   document.getElementById("goalChips").innerHTML=last.map(n=>
     `<span class="chip ${n.met?'ok':'hot'}" title="${n.day}">${n.day.slice(5)}: ${F(n.t)}°</span>`).join("")||'<span class="muted">no nights yet</span>';
 

@@ -1,8 +1,8 @@
 {
-  "updated": 1782884554.160747,
+  "updated": 1782884761.1627893,
   "t_ethan": 73.3,
   "t_office": 61.7,
-  "outdoor": 76.0,
+  "outdoor": 75.8,
   "humidity": 81.0,
   "target": 70.0,
   "band": [
@@ -12,11 +12,11 @@
   "setpoint": 60.8,
   "mode": "cool",
   "fan": "max",
-  "turbo": false,
+  "turbo": true,
   "ac_running": true,
   "indoor_hum": 53.0,
   "central_cool": 1,
-  "t_living": 67.4,
+  "t_living": 67.2,
   "t_heather": 71.3,
   "in_band": false,
   "cmd": {
@@ -27,7 +27,7 @@
     "running": true
   },
   "confirmed": {
-    "turbo": false,
+    "turbo": true,
     "fan": "max",
     "setpoint": 60.8,
     "mode": "cool",
@@ -35,7 +35,9 @@
     "online": true
   },
   "unconfirmed": false,
-  "mismatch": [],
-  "applied": true,
+  "mismatch": [
+    "turbo"
+  ],
+  "applied": false,
   "error": null
 }

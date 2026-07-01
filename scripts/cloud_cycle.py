@@ -204,13 +204,6 @@ def main() -> None:
     try:
         confirmed = midea.apply(send_sp, dec.mode, dec.ac_should_run,
                                 fan_speed=dec.fan_speed, turbo=dec.turbo)
-        # "applied" means the device CONFIRMS our intent (within tolerance), not
-        # merely that the call raised no exception. If the read-back failed
-        # (confirmed is None) we can't check, so treat it as applied-but-unconfirmed.
-        applied = (confirmed is None) or (
-            confirmed.power == dec.ac_should_run
-            and (not dec.turbo or confirmed.turbo)
-        )
         last_mode, last_fan = dec.mode, tuple(fan_state)
         if last_setpoint is None or gap_ok:
             last_setpoint = send_sp
@@ -238,6 +231,12 @@ def main() -> None:
             mismatch.append("running")
         if conf_setpoint is not None and abs(conf_setpoint - send_sp) > 0.6:
             mismatch.append("setpoint")
+
+    # "applied" = the call succeeded AND the device confirms our full intent
+    # (no mismatch on turbo/mode/running/setpoint). A failed read-back
+    # (unconfirmed) can't be checked, so it counts as applied-but-unconfirmed.
+    # Derived from `mismatch` so the two can never disagree.
+    applied = (err is None) and (unconfirmed or not mismatch)
 
     # values the dashboard's existing top-level keys show: CONFIRMED when we
     # have it, else fall back to intent so a read-back failure doesn't blank

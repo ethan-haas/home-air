@@ -1,14 +1,14 @@
 {
   "integral": 12240.000000000022,
-  "last_setpoint": 63.0,
+  "last_setpoint": 60.0,
   "last_mode": "cool",
   "last_fan": [
-    "medium",
-    false
+    "max",
+    true
   ],
-  "last_cmd_time": 1782900545.0768473,
+  "last_cmd_time": 1782905195.5040572,
   "interval_s": 120,
-  "last_office": 65.3,
-  "last_ethan": 70.6,
-  "updated": 1782900545.0768473
+  "last_office": 63.5,
+  "last_ethan": 73.0,
+  "updated": 1782905195.5040572
 }

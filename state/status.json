@@ -1,12 +1,12 @@
 {
-  "updated": 1782938560.800329,
-  "t_ethan": 81.5,
-  "t_office": 71.6,
-  "outdoor": 96.0,
-  "humidity": 40.0,
-  "target": 74.0,
+  "updated": 1782940654.2605972,
+  "t_ethan": 79.0,
+  "t_office": 72.5,
+  "outdoor": 97.1,
+  "humidity": 41.0,
+  "target": 71.85833333333333,
   "band": [
-    72.0,
+    69.0,
     74.0
   ],
   "setpoint": 60.8,

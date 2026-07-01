@@ -58,6 +58,14 @@ jobs:
           git config user.email "home-air-bot@users.noreply.github.com"
           git add state/ docs/status.json docs/history.csv
           git diff --quiet --cached || git commit -m "state: control cycle $(date -u +%FT%TZ)"
-          # rebase onto any commits that landed since checkout (fix pushes, manual
-          # commits) so a rare non-fast-forward never turns the run red; retry once.
-          git push || (git pull --rebase --autostash origin main && git push)
+          # Push, tolerating commits that landed since checkout (other runs, fix
+          # pushes). On a non-fast-forward, rebase our state commit onto the latest
+          # main; the ONLY files we touch are regenerated each run, so on a
+          # conflict prefer OUR fresh version (-X theirs = the commit being
+          # replayed). Bounded retry; never leave a dangling rebase.
+          for attempt in 1 2 3 4 5; do
+            git push && break
+            git fetch origin main || true
+            git rebase -X theirs --autostash origin/main || git rebase --abort
+            sleep 3
+          done

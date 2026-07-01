@@ -140,11 +140,15 @@ class MideaClient:
             dev.operational_mode = AC.OperationalMode.COOL
         elif mode == "fan":
             dev.operational_mode = AC.OperationalMode.FAN_ONLY
-        # turbo (boost) overrides fan; when off, set the requested fan speed
-        if getattr(dev, "supports_turbo", False):
+        # turbo (boost) overrides fan; when off, set the requested fan speed.
+        # If turbo is requested but the unit doesn't support it, fall back to
+        # MAX fan so the fan is never left unset (silent) during the biggest
+        # deficit.
+        supports = getattr(dev, "supports_turbo", False)
+        if supports:
             dev.turbo = bool(turbo)
-        if not turbo:
-            dev.fan_speed = self._fan_enum(fan_speed)
+        if not (turbo and supports):
+            dev.fan_speed = self._fan_enum("max" if turbo else fan_speed)
         # set the target ONLY in cool mode — setting a target while commanding
         # FAN_ONLY makes this unit snap back to COOL (target implies temp control),
         # which is why fan mode never stuck from the running service.

@@ -72,11 +72,13 @@ def main() -> None:
     last_fan = tuple(st["last_fan"]) if st.get("last_fan") else None
     last_cmd_time = float(st.get("last_cmd_time", 0.0))
     last_office = st.get("last_office")        # office temp from the prior run
+    last_ethan = st.get("last_ethan")          # Ethan's temp from the prior run
 
     # --- read sensors (cloud APIs, work anywhere) ---
     from hvac.ecobee_client import EcobeeClient
     ec = EcobeeClient(cfg)
     t_living = t_heather = indoor_hum = central_cool = None
+    t_ethan = None
     try:
         ctx = ec.read_full()
         t_ethan = ctx.get("ethan")
@@ -86,8 +88,74 @@ def main() -> None:
         central_cool = ctx.get("central_cool")
         if t_ethan is None:
             t_ethan = ec.read_ethan_temp()
-    except Exception:
-        t_ethan = ec.read_ethan_temp()
+    except Exception as e:
+        print(f"ecobee read_full failed: {e}")
+        try:
+            t_ethan = ec.read_ethan_temp()
+        except Exception as e2:
+            print(f"ecobee read_ethan_temp failed: {e2}")
+            t_ethan = None
+
+    if t_ethan is None:
+        # persistent ecobee outage: carry the last known reading forward so a
+        # single flaky poll doesn't crash the whole run.
+        t_ethan = last_ethan
+    else:
+        last_ethan = t_ethan
+
+    if t_ethan is None:
+        # never had a reading at all (fresh state + dead ecobee) -> nothing to
+        # control against. Skip actuation entirely, persist what we have, and
+        # exit cleanly (no traceback, no missing history row).
+        err = "no Ethan temp available (ecobee down, no carried-forward value)"
+        print(err)
+        STATE_FILE.write_text(json.dumps({
+            "integral": ctrl.integral, "last_setpoint": last_setpoint,
+            "last_mode": last_mode, "last_fan": list(last_fan) if last_fan else None,
+            "last_cmd_time": last_cmd_time, "interval_s": cfg.interval_s,
+            "last_office": last_office, "last_ethan": last_ethan, "updated": now,
+        }, indent=2), encoding="utf-8")
+        HEADER = ["ts", "t_ethan", "t_office", "outdoor", "humidity", "target",
+                  "band_low", "band_high", "setpoint", "mode", "fan", "turbo",
+                  "ac_running", "applied", "indoor_hum", "central_cool",
+                  "t_living", "t_heather", "error"]
+        fresh = True
+        if HISTORY_FILE.exists():
+            try:
+                first = HISTORY_FILE.open(encoding="utf-8").readline().strip()
+                fresh = first != ",".join(HEADER)
+            except Exception:
+                fresh = True
+        mode_w = "w" if fresh else "a"
+        with HISTORY_FILE.open(mode_w, newline="", encoding="utf-8") as f:
+            wr = csv.writer(f)
+            if fresh:
+                wr.writerow(HEADER)
+            wr.writerow([round(now), None, last_office, None, None, None,
+                         None, None, last_setpoint, last_mode,
+                         last_fan[0] if last_fan else None,
+                         int(last_fan[1]) if last_fan else 0, 0, 0,
+                         None, "", None, None, err])
+        STATUS_FILE.write_text(json.dumps({
+            "updated": now, "t_ethan": None, "t_office": last_office,
+            "outdoor": None, "humidity": None,
+            "target": None, "band": [None, None],
+            "setpoint": last_setpoint, "mode": last_mode,
+            "fan": last_fan[0] if last_fan else None,
+            "turbo": bool(last_fan[1]) if last_fan else False,
+            "ac_running": False,
+            "indoor_hum": None, "central_cool": None,
+            "t_living": None, "t_heather": None, "in_band": None,
+            "cmd": {"setpoint": last_setpoint, "mode": last_mode,
+                    "fan": last_fan[0] if last_fan else None,
+                    "turbo": bool(last_fan[1]) if last_fan else False,
+                    "running": False},
+            "confirmed": {"turbo": None, "fan": None, "setpoint": None,
+                          "mode": None, "running": None, "online": None},
+            "unconfirmed": True, "mismatch": [],
+            "applied": False, "error": err,
+        }, indent=2), encoding="utf-8")
+        return
 
     outdoor = forecast = humidity = None
     try:
@@ -132,10 +200,17 @@ def main() -> None:
     send_sp = dec.setpoint_f if (last_setpoint is None or gap_ok) else last_setpoint
     applied = False
     err = None
+    confirmed = None
     try:
-        midea.apply(send_sp, dec.mode, dec.ac_should_run,
-                    fan_speed=dec.fan_speed, turbo=dec.turbo)
-        applied = True
+        confirmed = midea.apply(send_sp, dec.mode, dec.ac_should_run,
+                                fan_speed=dec.fan_speed, turbo=dec.turbo)
+        # "applied" means the device CONFIRMS our intent (within tolerance), not
+        # merely that the call raised no exception. If the read-back failed
+        # (confirmed is None) we can't check, so treat it as applied-but-unconfirmed.
+        applied = (confirmed is None) or (
+            confirmed.power == dec.ac_should_run
+            and (not dec.turbo or confirmed.turbo)
+        )
         last_mode, last_fan = dec.mode, tuple(fan_state)
         if last_setpoint is None or gap_ok:
             last_setpoint = send_sp
@@ -145,12 +220,40 @@ def main() -> None:
         err = str(e)
         print(f"midea apply failed: {e}")
 
+    unconfirmed = confirmed is None
+    if confirmed is not None:
+        conf_turbo, conf_fan = confirmed.turbo, confirmed.fan_speed
+        conf_setpoint, conf_mode = confirmed.target_f, confirmed.mode
+        conf_running, conf_online = confirmed.power, confirmed.online
+    else:
+        conf_turbo = conf_fan = conf_setpoint = conf_mode = conf_running = conf_online = None
+
+    mismatch = []
+    if confirmed is not None:
+        if bool(conf_turbo) != bool(dec.turbo):
+            mismatch.append("turbo")
+        if conf_mode != dec.mode:
+            mismatch.append("mode")
+        if bool(conf_running) != bool(dec.ac_should_run):
+            mismatch.append("running")
+        if conf_setpoint is not None and abs(conf_setpoint - send_sp) > 0.6:
+            mismatch.append("setpoint")
+
+    # values the dashboard's existing top-level keys show: CONFIRMED when we
+    # have it, else fall back to intent so a read-back failure doesn't blank
+    # the dashboard out.
+    show_turbo = conf_turbo if confirmed is not None else dec.turbo
+    show_fan = conf_fan if confirmed is not None else dec.fan_speed
+    show_setpoint = conf_setpoint if (confirmed is not None and conf_setpoint is not None) else send_sp
+    show_mode = conf_mode if confirmed is not None else dec.mode
+    show_running = conf_running if confirmed is not None else dec.ac_should_run
+
     # --- persist state ---
     STATE_FILE.write_text(json.dumps({
         "integral": ctrl.integral, "last_setpoint": last_setpoint,
         "last_mode": last_mode, "last_fan": list(last_fan) if last_fan else None,
         "last_cmd_time": last_cmd_time, "interval_s": cfg.interval_s,
-        "last_office": office_temp, "updated": now,
+        "last_office": office_temp, "last_ethan": last_ethan, "updated": now,
     }, indent=2), encoding="utf-8")
 
     HEADER = ["ts", "t_ethan", "t_office", "outdoor", "humidity", "target",
@@ -171,8 +274,10 @@ def main() -> None:
         wr = csv.writer(f)
         if fresh:
             wr.writerow(HEADER)
+        # log the ACTUALLY-COMMANDED setpoint (send_sp), not dec.setpoint_f --
+        # the gap-gate may hold the old setpoint.
         wr.writerow([round(now), t_ethan, office_temp, outdoor, humidity, sp.target,
-                     sp.low, sp.high, dec.setpoint_f, dec.mode, dec.fan_speed,
+                     sp.low, sp.high, send_sp, dec.mode, dec.fan_speed,
                      int(dec.turbo), int(dec.ac_should_run), int(applied),
                      indoor_hum, (int(central_cool) if central_cool is not None else ""),
                      t_living, t_heather, err or ""])
@@ -181,18 +286,27 @@ def main() -> None:
         "updated": now, "t_ethan": t_ethan, "t_office": office_temp,
         "outdoor": outdoor, "humidity": humidity,
         "target": sp.target, "band": [sp.low, sp.high],
-        "setpoint": dec.setpoint_f, "mode": dec.mode, "fan": dec.fan_speed,
-        "turbo": dec.turbo, "ac_running": dec.ac_should_run,
+        # top-level keys show CONFIRMED-device-truth when available, else intent
+        "setpoint": show_setpoint, "mode": show_mode, "fan": show_fan,
+        "turbo": show_turbo, "ac_running": show_running,
         "indoor_hum": indoor_hum, "central_cool": central_cool,
         "t_living": t_living, "t_heather": t_heather,
         "in_band": (sp.low <= t_ethan <= sp.high) if t_ethan is not None else None,
+        "cmd": {"setpoint": send_sp, "mode": dec.mode, "fan": dec.fan_speed,
+                "turbo": dec.turbo, "running": dec.ac_should_run},
+        "confirmed": {"turbo": conf_turbo, "fan": conf_fan,
+                      "setpoint": conf_setpoint, "mode": conf_mode,
+                      "running": conf_running, "online": conf_online},
+        "unconfirmed": unconfirmed, "mismatch": mismatch,
         "applied": applied, "error": err,
     }, indent=2), encoding="utf-8")
 
     print(f"ethan={t_ethan:.1f}F target={sp.target:.1f} out={outdoor} "
-          f"sp={dec.setpoint_f:.0f} {dec.mode} fan={dec.fan_speed}"
+          f"sp={send_sp:.0f} {dec.mode} fan={dec.fan_speed}"
           f"{' +turbo' if dec.turbo else ''} "
-          f"{'APPLIED' if applied else 'hold'}")
+          f"{'APPLIED' if applied else 'hold'}"
+          f"{' UNCONFIRMED' if unconfirmed else ''}"
+          f"{' MISMATCH:' + ','.join(mismatch) if mismatch else ''}")
 
 
 if __name__ == "__main__":

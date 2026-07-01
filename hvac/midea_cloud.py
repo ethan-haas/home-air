@@ -152,14 +152,18 @@ class MideaCloudClient:
         )
 
     def apply(self, setpoint_f: float, mode: str = "cool", power: bool = True,
-              fan_speed: str = "auto", turbo: bool = False):
+              fan_speed: str = "auto", turbo: bool = False) -> Optional[MideaState]:
         self._ensure()
         c = round_half(f_to_c(setpoint_f))
         c = max(16.0, min(30.0, c))
+        # mirror the LAN client (turbo overrides fan): the unit drops turbo when
+        # a manual fan speed is co-commanded, so when turbo is requested let it
+        # drive the airflow (fan=auto) instead of fighting it with fan=max.
+        fan_name = "auto" if turbo else fan_speed
         kwargs = {
             "running": bool(power),
             "mode": _MODE.get(mode, 2),
-            "fan_speed": _FAN.get(fan_speed, 102),
+            "fan_speed": _FAN.get(fan_name, 102),
             "turbo": bool(turbo),
             "fahrenheit": True,        # unit displays F (16C shows as 60F floor)
             "cloud": self._cloud,
@@ -169,3 +173,24 @@ class MideaCloudClient:
         if mode != "fan":
             kwargs["target_temperature"] = c
         self._dev.set_state(**kwargs)
+        # the library auto-refreshes after set_state (needs_refresh()==True), so
+        # self._dev.state already holds the DEVICE-CONFIRMED values here. Read
+        # them back and return a confirmed MideaState (same construction as
+        # refresh()) so the caller can tell intent from what actually landed.
+        try:
+            s = self._dev.state
+            it = getattr(s, "indoor_temperature", None)
+            tt = getattr(s, "target_temperature", None)
+            dmode = getattr(s, "mode", None)
+            dfan = getattr(s, "fan_speed", None)
+            return MideaState(
+                indoor_temp_f=c_to_f(it) if it is not None else None,
+                target_f=c_to_f(tt) if tt is not None else None,
+                power=bool(getattr(s, "running", False)),
+                mode=_MODE_INV.get(dmode, str(dmode)),
+                online=bool(getattr(s, "online", True)),
+                fan_speed=_FAN_INV.get(dfan, str(dfan) if dfan is not None else None),
+                turbo=bool(getattr(s, "turbo", False)),
+            )
+        except Exception:
+            return None

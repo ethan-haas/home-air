@@ -92,24 +92,31 @@ def test_fan_gentle_when_near_target_day():
     assert d.fan_speed in ("auto", "medium")
 
 
-def test_turbo_skipped_when_office_already_cold():
-    """Efficiency: if the office is already at/below its setpoint, turbo wastes
-    power (room is airflow-limited) -> MAX fan but NO turbo."""
+def test_boost_on_above_band_even_when_office_cold():
+    """Boost is an AIRFLOW lever on this Duo: the isolated room being above band
+    means the air needs moving, even when the office is already cold. (Old policy
+    skipped boost here; the office-cold gate was removed.)"""
     c = Controller(ControllerParams(), setpoint_min=60, setpoint_max=80)
-    # room far above target -> floors setpoint (~60); office already cold (61<=60+2)
     d = c.decide(t_ethan=78.0, target=70.0, outdoor_f=80.0, dt_s=120,
-                 office_temp=61.0)
+                 office_temp=61.0)   # office already cold
     assert d.fan_speed == "max"
-    assert d.turbo is False          # office cold -> skip wasteful turbo
+    assert d.turbo is True           # room above band -> boost airflow regardless
 
 
-def test_turbo_used_when_office_still_warm():
-    """If the office can't reach setpoint (compressor-limited), turbo helps."""
+def test_boost_on_when_office_still_warm():
     c = Controller(ControllerParams(), setpoint_min=60, setpoint_max=80)
     d = c.decide(t_ethan=82.0, target=70.0, outdoor_f=100.0, dt_s=120,
-                 office_temp=78.0)   # office way above setpoint -> still warm
+                 office_temp=78.0)
     assert d.fan_speed == "max"
     assert d.turbo is True
+
+
+def test_no_boost_when_in_band():
+    """Boost turns off once the room is back inside the comfort band."""
+    c = Controller(ControllerParams(), setpoint_min=60, setpoint_max=80)
+    d = c.decide(t_ethan=70.3, target=70.0, outdoor_f=85.0, dt_s=120,
+                 office_temp=65.0)   # error 0.3 -> in band
+    assert d.turbo is False
 
 
 def test_free_cool_fan_when_cold_outside_and_office_cold():

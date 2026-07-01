@@ -23,6 +23,7 @@ jobs:
     env:
       TZ: America/New_York     # so the 10pm-9am / day schedule is house-local
       HA_TARGET_F: "70"
+      HA_APPLY_TURBO_FAN: "on"   # controller owns boost (turbo_fan) — on when room above band
       ECOBEE_ACCOUNT: ${{ secrets.ECOBEE_ACCOUNT }}
       ECOBEE_PASSWORD: ${{ secrets.ECOBEE_PASSWORD }}
       ECOBEE_THERMOSTAT_ID: ${{ secrets.ECOBEE_THERMOSTAT_ID }}

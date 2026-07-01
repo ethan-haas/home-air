@@ -56,15 +56,17 @@ class ControllerParams:
     deadband_f: float = 0.71
     band_f: float = 1.0
 
-    # fan + boost (turbo) policy — drives the Midea's fan speed and turbo lever.
-    # Quiet at night (Ethan asleep); ramp fan with cooling demand by day; engage
-    # turbo only for a big daytime deficit (fast recovery, but loud + thirsty).
-    boost_error_f: float = 2.5      # error above which to use turbo + MAX fan (day)
-    high_fan_error_f: float = 1.5   # error above which to use HIGH fan (day)
-    # efficiency: data shows the office is usually already cold while Ethan's room
-    # stays hot (airflow-limited, not power-limited). Turbo only helps when the
-    # OFFICE itself can't reach its setpoint; once the office is within this many
-    # F of setpoint, turbo just burns power -> use MAX fan (airflow) instead.
+    # fan + boost policy — drives the Midea's fan speed and boost lever. On this
+    # Duo "boost" is turbo_fan (extra AIRFLOW), NOT a compressor turbo. Ethan's
+    # room is airflow-isolated (corr ~0.16 to the office, ~0.92 to outdoor), so
+    # moving more air is exactly what helps whenever his room is above band —
+    # regardless of how cold the office already is. So: boost the moment the room
+    # is above the comfort band; ramp the fan below that; quiet only when in band.
+    boost_error_f: float = 1.0      # error (room above target) above which to boost + MAX fan
+    high_fan_error_f: float = 0.75  # error above which to use HIGH fan (still in band)
+    # (retained for param compatibility; the office-cold gate was removed because
+    # boost here is airflow, not compressor — a cold office does not make airflow
+    # boost wasteful when the isolated room is still hot.)
     office_cold_margin_f: float = 2.0
     # economizer / free cooling: when it's colder OUTSIDE than the target, the
     # room's heat load is low and cold air is already available — circulate it
@@ -161,18 +163,16 @@ class Controller:
     def _fan_plan(self, error: float, ac_should_run: bool, sleep_mode: bool,
                   office_temp: Optional[float] = None,
                   setpoint: Optional[float] = None) -> tuple[str, bool]:
-        """Pick fan speed + turbo. Escalate with the deficit at ANY time (turbo is
-        OK day or night per the operator). EFFICIENCY: turbo only when the office
-        is still warmer than its setpoint (compressor-limited); if the office is
-        already cold, turbo wastes power (room is airflow-limited) -> MAX fan, no
-        turbo, same room effect. Whisper only when in band at night."""
+        """Pick fan speed + boost. Boost (turbo_fan) is an AIRFLOW lever on this
+        Duo, so engage it whenever the room is above the comfort band, day or
+        night (operator preference: hitting target beats silence; the isolated
+        room needs the air moved). Ramp the fan below the band top; whisper only
+        when actually in band at night."""
         p = self.p
         if not ac_should_run:
             return "auto", False
-        if error > p.boost_error_f:
-            office_cold = (office_temp is not None and setpoint is not None
-                           and office_temp <= setpoint + p.office_cold_margin_f)
-            return ("max", False) if office_cold else ("max", True)
+        if error > p.boost_error_f:              # above the band -> airflow boost
+            return "max", True
         if error > p.high_fan_error_f:
             return "high", False
         if error > 0.3:

@@ -148,7 +148,8 @@ class MideaCloudClient:
             mode=_MODE_INV.get(mode, str(mode)),
             online=bool(getattr(s, "online", True)),
             fan_speed=_FAN_INV.get(fan, str(fan) if fan is not None else None),
-            turbo=bool(getattr(s, "turbo", False)),
+            turbo=(bool(getattr(s, "turbo", False))
+                   or bool(getattr(s, "turbo_fan", False))),   # boost = turbo_fan on this Duo
         )
 
     def apply(self, setpoint_f: float, mode: str = "cool", power: bool = True,
@@ -156,18 +157,24 @@ class MideaCloudClient:
         self._ensure()
         c = round_half(f_to_c(setpoint_f))
         c = max(16.0, min(30.0, c))
-        # mirror the LAN client (turbo overrides fan): the unit drops turbo when
-        # a manual fan speed is co-commanded, so when turbo is requested let it
-        # drive the airflow (fan=auto) instead of fighting it with fan=max.
-        fan_name = "auto" if turbo else fan_speed
+        # This Duo's app "Turbo/Boost" button drives the `turbo_fan` wire
+        # attribute (data[8] bit5), NOT the library's `turbo` (data[10] bit1),
+        # which this unit ignores (verified live: app boost ON -> turbo_fan=True,
+        # turbo=False). We READ boost off turbo_fan (below), but do NOT command
+        # turbo_fan here — that would let the controller clear a boost the user
+        # set by hand in the app. Set `apply_turbo_fan=True` (autonomous boost
+        # control) only once the operator opts in; the requested fan is kept
+        # (turbo_fan coexists with fan=max).
         kwargs = {
             "running": bool(power),
             "mode": _MODE.get(mode, 2),
-            "fan_speed": _FAN.get(fan_name, 102),
+            "fan_speed": _FAN.get(fan_speed, 102),
             "turbo": bool(turbo),
             "fahrenheit": True,        # unit displays F (16C shows as 60F floor)
             "cloud": self._cloud,
         }
+        if getattr(self.cfg, "midea_apply_turbo_fan", False):
+            kwargs["turbo_fan"] = bool(turbo)   # autonomous boost (opt-in)
         # mirror the LAN guard: setting a target while commanding FAN_ONLY makes
         # the Duo snap back to COOL, so free-cool would never stick off-LAN.
         if mode != "fan":
@@ -190,7 +197,8 @@ class MideaCloudClient:
                 mode=_MODE_INV.get(dmode, str(dmode)),
                 online=bool(getattr(s, "online", True)),
                 fan_speed=_FAN_INV.get(dfan, str(dfan) if dfan is not None else None),
-                turbo=bool(getattr(s, "turbo", False)),
+                turbo=(bool(getattr(s, "turbo", False))
+                   or bool(getattr(s, "turbo_fan", False))),   # this unit's boost = turbo_fan
             )
         except Exception:
             return None

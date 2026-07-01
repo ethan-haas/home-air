@@ -191,12 +191,13 @@ def main() -> None:
                       outdoor_forecast_f=forecast, sleep_mode=sp.night,
                       office_temp=office_temp)
 
-    # This unit refuses turbo over the cloud relay (verified live: requested
-    # turbo -> device confirmed turbo off). Requesting it just swaps MAX fan for
-    # AUTO with no boost, so on the cloud path suppress unsupported turbo and
-    # keep MAX fan — same airflow during recovery, and no phantom BOOST/mismatch
-    # on the dashboard. Override with HA_MIDEA_TURBO=on for a unit that honors it.
-    if dec.turbo and not cfg.midea_turbo_supported:
+    # Boost on this Duo is the `turbo_fan` bit (see midea_cloud.apply). Unless
+    # autonomous boost is enabled, the cloud path does NOT command turbo_fan, so
+    # the controller can't actuate boost — don't claim to request it either.
+    # Drop the boost request (keep MAX fan for airflow) so the dashboard shows a
+    # clean intent, and any boost the user set by hand in the app is read back
+    # and reported truthfully without the controller fighting it.
+    if dec.turbo and not cfg.midea_apply_turbo_fan:
         dec.turbo = False
         dec.fan_speed = "max"
 

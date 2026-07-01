@@ -1,7 +1,9 @@
-"""Direct unit tests for MideaCloudClient.apply — the turbo/fan co-command fix
-and the device-confirmed read-back. These exercise the real apply() body (the
-e2e cloud_cycle tests mock the whole client away, so this is the only place the
-fan=auto-under-turbo behavior and the state read-back are actually asserted).
+"""Direct unit tests for MideaCloudClient.apply — how this Duo's boost actually
+works. Verified against the live device: the app's Turbo/Boost button drives the
+`turbo_fan` wire attribute (data[8] bit5); the library's `turbo` (data[10] bit1)
+is a different bit this unit ignores. So boost is READ off turbo_fan, and it is
+only COMMANDED when the operator opts in (config midea_apply_turbo_fan) — else a
+boost the user set by hand in the app must persist untouched.
 """
 import pytest
 
@@ -10,8 +12,7 @@ from hvac.midea_cloud import MideaCloudClient, _MODE, _FAN
 
 
 class FakeState:
-    """Stand-in for midea_beautiful's AirConditionerState. `set_state` on the
-    device writes these attrs; apply() reads them back as device-confirmed."""
+    """Stand-in for midea_beautiful's AirConditionerState."""
     def __init__(self, **kw):
         self.indoor_temperature = kw.get("indoor_temperature", 23.0)   # C
         self.target_temperature = kw.get("target_temperature", 16.0)   # C
@@ -20,11 +21,10 @@ class FakeState:
         self.running = kw.get("running", True)
         self.online = kw.get("online", True)
         self.turbo = kw.get("turbo", False)
+        self.turbo_fan = kw.get("turbo_fan", False)
 
 
 class FakeDev:
-    """Records the last set_state kwargs and lets a test script how the device
-    responds (e.g. accept vs silently refuse turbo)."""
     def __init__(self, on_apply=None):
         self.state = FakeState()
         self.last_kwargs = None
@@ -32,35 +32,33 @@ class FakeDev:
 
     def set_state(self, **kwargs):
         self.last_kwargs = kwargs
-        # mirror the library: applying updates state to what the DEVICE reports.
-        # by default reflect the command; a test can override via on_apply to
-        # simulate a unit that drops turbo.
         if self._on_apply:
             self._on_apply(self.state, kwargs)
         else:
-            for k in ("running", "mode", "fan_speed", "turbo"):
+            for k in ("running", "mode", "fan_speed", "turbo", "turbo_fan"):
                 if k in kwargs:
                     setattr(self.state, k, kwargs[k])
             if "target_temperature" in kwargs:
                 self.state.target_temperature = kwargs["target_temperature"]
 
 
-def _client(dev):
-    c = MideaCloudClient(Config())
+def _client(dev, apply_turbo_fan=False):
+    cfg = Config()
+    cfg.midea_apply_turbo_fan = apply_turbo_fan
+    c = MideaCloudClient(cfg)
     c._ensure = lambda: None          # skip real cloud login
     c._dev = dev
     c._cloud = object()               # sentinel; passed through as kwargs["cloud"]
     return c
 
 
-def test_turbo_sends_fan_auto_not_max():
-    """The core fix: when turbo is requested, fan must be commanded AUTO (102),
-    not max — the unit drops turbo when a manual fan speed is co-commanded."""
+def test_turbo_request_keeps_requested_max_fan():
+    """turbo_fan coexists with a manual fan (verified live: boost on + fan=100),
+    so a boost decision must NOT downgrade the fan to auto."""
     dev = FakeDev()
     c = _client(dev)
     c.apply(60.0, mode="cool", power=True, fan_speed="max", turbo=True)
-    assert dev.last_kwargs["turbo"] is True
-    assert dev.last_kwargs["fan_speed"] == _FAN["auto"]      # 102, NOT max(100)
+    assert dev.last_kwargs["fan_speed"] == _FAN["max"]      # 100, kept
 
 
 def test_no_turbo_sends_requested_fan():
@@ -71,31 +69,37 @@ def test_no_turbo_sends_requested_fan():
     assert dev.last_kwargs["fan_speed"] == _FAN["high"]      # 80
 
 
-def test_apply_returns_device_confirmed_state():
-    """apply() returns what the DEVICE reports, not the intent."""
+def test_boost_is_read_from_turbo_fan():
+    """The app's boost = turbo_fan. Even when the library's `turbo` bit is False,
+    a device reporting turbo_fan=True must surface as boost ON."""
     dev = FakeDev()
+    dev.state.turbo = False
+    dev.state.turbo_fan = True                 # app boost ON
     c = _client(dev)
-    st = c.apply(60.0, mode="cool", power=True, fan_speed="max", turbo=True)
+    st = c.apply(60.0, mode="cool", power=True, fan_speed="max", turbo=False)
     assert st is not None
-    assert st.turbo is True
-    assert st.mode == "cool"
-    assert st.power is True
+    assert st.turbo is True, "boost surfaced from turbo_fan"
 
 
-def test_apply_reports_turbo_refusal():
-    """Device silently refuses turbo -> read-back turbo stays False even though
-    we requested it. This is exactly the 'dashboard showed turbo but it never
-    turned on' scenario, now surfaced as device truth."""
-    def refuse_turbo(state, kwargs):
-        state.running = kwargs.get("running", state.running)
-        state.mode = kwargs.get("mode", state.mode)
-        state.fan_speed = kwargs.get("fan_speed", state.fan_speed)
-        state.turbo = False                    # <- unit ignores the turbo bit
-    dev = FakeDev(on_apply=refuse_turbo)
-    c = _client(dev)
-    st = c.apply(60.0, mode="cool", power=True, fan_speed="max", turbo=True)
-    assert dev.last_kwargs["turbo"] is True     # we DID request it
-    assert st.turbo is False                    # but the device reports it OFF
+def test_default_does_not_command_turbo_fan():
+    """Default (opt-in off): apply must NOT send turbo_fan, so a boost the user
+    set by hand in the app is never cleared by the controller."""
+    dev = FakeDev()
+    dev.state.turbo_fan = True                  # user turned boost on in the app
+    c = _client(dev, apply_turbo_fan=False)
+    c.apply(60.0, mode="cool", power=True, fan_speed="max", turbo=False)
+    assert "turbo_fan" not in dev.last_kwargs
+    assert dev.state.turbo_fan is True          # manual boost preserved
+
+
+def test_opt_in_commands_turbo_fan_from_intent():
+    """With autonomous boost enabled, apply drives turbo_fan from the decision."""
+    dev = FakeDev()
+    c = _client(dev, apply_turbo_fan=True)
+    c.apply(60.0, mode="cool", power=True, fan_speed="max", turbo=True)
+    assert dev.last_kwargs["turbo_fan"] is True
+    st = c.apply(60.0, mode="cool", power=True, fan_speed="max", turbo=False)
+    assert dev.last_kwargs["turbo_fan"] is False   # can also turn it off
 
 
 def test_cool_mode_sets_target_fan_mode_does_not():
@@ -106,21 +110,19 @@ def test_cool_mode_sets_target_fan_mode_does_not():
     dev2 = FakeDev()
     c2 = _client(dev2)
     c2.apply(60.0, mode="fan", power=True, fan_speed="max", turbo=False)
-    assert "target_temperature" not in dev2.last_kwargs   # target would snap Duo back to COOL
+    assert "target_temperature" not in dev2.last_kwargs   # target snaps Duo back to COOL
 
 
 def test_apply_readback_failure_returns_none():
-    """If reading state back throws, apply returns None (caller treats as
-    applied-but-unconfirmed) rather than masking the successful command."""
     class BoomDev:
         def __init__(self):
             self.last_kwargs = None
-        def set_state(self, **kwargs):     # succeeds — command lands
+        def set_state(self, **kwargs):
             self.last_kwargs = kwargs
         @property
-        def state(self):                   # but the read-back throws
+        def state(self):
             raise RuntimeError("cloud read-back timeout")
     dev = BoomDev()
     c = _client(dev)
     assert c.apply(60.0, mode="cool", power=True, turbo=False) is None
-    assert dev.last_kwargs is not None     # the command still went out
+    assert dev.last_kwargs is not None

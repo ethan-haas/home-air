@@ -132,9 +132,9 @@ def cloud_cycle_env(tmp_path, monkeypatch):
     mock_config.latitude = 40.1
     mock_config.longitude = -82.9
     mock_config.target_f = 72.0
-    # default fixture models a turbo-CAPABLE unit so the confirmed-state contract
-    # tests exercise the turbo path; the suppression test overrides this to False.
-    mock_config.midea_turbo_supported = True
+    # default fixture enables autonomous boost so the confirmed-state contract
+    # tests exercise the turbo request path; the suppression test overrides False.
+    mock_config.midea_apply_turbo_fan = True
 
     monkeypatch.setattr("scripts.cloud_cycle.Config", mock_config)
 
@@ -425,15 +425,15 @@ def test_all_sensors_fail_gracefully(cloud_cycle_env, monkeypatch):
     assert status["outdoor"] is None, "no outdoor temp available"
 
 
-def test_turbo_suppressed_when_unsupported(cloud_cycle_env, monkeypatch):
-    """Gen-2 REFINE (grounded in a live run: this Duo refuses turbo over cloud).
-    With midea_turbo_supported=False, a hot-room boost decision must be
-    suppressed on the cloud path: no phantom turbo requested, MAX fan held, and
-    no 'turbo' mismatch on the dashboard."""
-    cloud_cycle_env["config"].midea_turbo_supported = False   # this unit can't turbo
+def test_boost_request_dropped_when_not_autonomous(cloud_cycle_env, monkeypatch):
+    """When autonomous boost is OFF (default), the cloud path can't actuate boost
+    (it doesn't command turbo_fan), so it must not REQUEST it either: a hot-room
+    boost decision is dropped, MAX fan is held, and there's no phantom 'turbo'
+    mismatch on the dashboard. (A boost the user set by hand is left untouched.)"""
+    cloud_cycle_env["config"].midea_apply_turbo_fan = False   # controller ignores boost
     state_dir = cloud_cycle_env["state_dir"]
 
-    # Hot day -> controller WOULD choose turbo, but the cloud path must suppress it
+    # Hot day -> controller WOULD choose turbo, but the cloud path must drop it
     fake_ecobee = FakeEcobeeClient(None, temps_ethan=[76.0])
     # Faithful device: reports back exactly what it was commanded
     fake_midea = FakeMideaCloudClient(None, device_accepts=True)

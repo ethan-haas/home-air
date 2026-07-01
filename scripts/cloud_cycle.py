@@ -191,6 +191,15 @@ def main() -> None:
                       outdoor_forecast_f=forecast, sleep_mode=sp.night,
                       office_temp=office_temp)
 
+    # This unit refuses turbo over the cloud relay (verified live: requested
+    # turbo -> device confirmed turbo off). Requesting it just swaps MAX fan for
+    # AUTO with no boost, so on the cloud path suppress unsupported turbo and
+    # keep MAX fan — same airflow during recovery, and no phantom BOOST/mismatch
+    # on the dashboard. Override with HA_MIDEA_TURBO=on for a unit that honors it.
+    if dec.turbo and not cfg.midea_turbo_supported:
+        dec.turbo = False
+        dec.fan_speed = "max"
+
     # --- actuate via cloud ---
     # Re-assert the full command every run (like the LAN service) so the unit's
     # onboard schedule/eco can't override us; only the setpoint is gap-gated.

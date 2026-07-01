@@ -130,6 +130,9 @@ def cloud_cycle_env(tmp_path, monkeypatch):
     mock_config.latitude = 40.1
     mock_config.longitude = -82.9
     mock_config.target_f = 72.0
+    # default fixture models a turbo-CAPABLE unit so the confirmed-state contract
+    # tests exercise the turbo path; the suppression test overrides this to False.
+    mock_config.midea_turbo_supported = True
 
     monkeypatch.setattr("scripts.cloud_cycle.Config", mock_config)
 
@@ -418,3 +421,32 @@ def test_all_sensors_fail_gracefully(cloud_cycle_env, monkeypatch):
     assert status["error"] is not None, "should have error message"
     assert status["t_ethan"] is None, "no Ethan temp available"
     assert status["outdoor"] is None, "no outdoor temp available"
+
+
+def test_turbo_suppressed_when_unsupported(cloud_cycle_env, monkeypatch):
+    """Gen-2 REFINE (grounded in a live run: this Duo refuses turbo over cloud).
+    With midea_turbo_supported=False, a hot-room boost decision must be
+    suppressed on the cloud path: no phantom turbo requested, MAX fan held, and
+    no 'turbo' mismatch on the dashboard."""
+    cloud_cycle_env["config"].midea_turbo_supported = False   # this unit can't turbo
+    state_dir = cloud_cycle_env["state_dir"]
+
+    # Hot day -> controller WOULD choose turbo, but the cloud path must suppress it
+    fake_ecobee = FakeEcobeeClient(None, temps_ethan=[76.0])
+    # Faithful device: reports back exactly what it was commanded
+    fake_midea = FakeMideaCloudClient(None, device_accepts=True)
+    fake_weather = FakeWeather(temp_f=90.0, forecast_temp_f=92.0)
+
+    monkeypatch.setattr("hvac.ecobee_client.EcobeeClient", lambda cfg: fake_ecobee)
+    monkeypatch.setattr("hvac.midea_cloud.MideaCloudClient", lambda cfg: fake_midea)
+    monkeypatch.setattr("hvac.weather.get_weather", lambda lat, lon, lead_min: fake_weather)
+    monkeypatch.setattr("scripts.cloud_cycle.local_hour", lambda now: 14.0)
+
+    from scripts.cloud_cycle import main
+    main()
+
+    status = json.loads((state_dir / "status.json").read_text())
+    assert status["cmd"]["turbo"] is False, "turbo suppressed on unsupported cloud unit"
+    assert status["cmd"]["fan"] == "max", "MAX fan held for airflow instead of turbo"
+    assert "turbo" not in status["mismatch"], "no phantom turbo -> no turbo mismatch"
+    assert status["turbo"] is False

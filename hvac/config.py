@@ -85,6 +85,13 @@ class Config:
     # 'lan' = local control via msmart-ng (must be on home LAN);
     # 'cloud' = MSmartHome relay via midea-beautiful-air (works over WAN).
     midea_transport: str = "lan"
+    # This office Duo silently refuses the turbo/boost bit over the MSmartHome
+    # cloud relay (verified live: cmd turbo=true -> device confirmed turbo=false).
+    # When turbo is unsupported, requesting it is worse than useless, so the
+    # cloud path suppresses it and holds MAX fan instead (same airflow, no
+    # phantom BOOST on the dashboard). Set HA_MIDEA_TURBO=on for a unit that
+    # actually honors turbo over cloud.
+    midea_turbo_supported: bool = False
     # Louver: this Duo's vertical vane is MANUAL (verified: it ignores software
     # angle/swing — no motor). Aim it by hand at the doorway. So we don't send
     # swing commands by default. (midea_swing_pos kept for motorized units.)
@@ -127,6 +134,7 @@ class Config:
             midea_cloud_account=_get("MIDEA_ACCOUNT", ""),
             midea_cloud_password=_get("MIDEA_PASSWORD", ""),
             midea_transport=_get("MIDEA_TRANSPORT", "lan"),
+            midea_turbo_supported=_get("HA_MIDEA_TURBO", "") in ("1", "true", "True", "on"),
             midea_set_swing=_get("MIDEA_SET_SWING", "") in ("1", "true", "True"),
             midea_swing_pos=int(_getf("MIDEA_SWING_POS", 3)),
             latitude=_getf("HA_LAT", 0.0),
